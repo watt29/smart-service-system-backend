@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบสิทธิการเบิกค่ารักษาพยาบาล</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .container { background-color: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08); width: 100%; max-width: 500px; text-align: center; }
+        h1 { color: #2c3e50; margin-bottom: 25px; font-size: 1.8em; }
+        .search-box { display: flex; margin-bottom: 20px; }
+        .search-box input { flex-grow: 1; padding: 12px 18px; border: 1px solid #ced4da; border-radius: 8px 0 0 8px; font-size: 1em; outline: none; transition: border-color 0.3s; }
+        .search-box input:focus { border-color: #007bff; }
+        .search-box button { background-color: #007bff; color: white; border: none; padding: 12px 20px; border-radius: 0 8px 8px 0; cursor: pointer; font-size: 1em; transition: background-color 0.3s; }
+        .search-box button:hover { background-color: #0056b3; }
+        .quick-reply { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 30px; }
+        .quick-reply button { background-color: #e9ecef; color: #495057; border: 1px solid #dee2e6; padding: 8px 15px; border-radius: 20px; cursor: pointer; font-size: 0.9em; transition: background-color 0.3s, color 0.3s; }
+        .quick-reply button:hover { background-color: #007bff; color: white; }
+        .result-box { text-align: left; border-top: 1px solid #eee; padding-top: 20px; }
+        .result-item { background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 15px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); }
+        .result-item h3 { color: #007bff; margin-top: 0; margin-bottom: 10px; font-size: 1.2em; }
+        .result-item p { margin-bottom: 5px; color: #343a40; line-height: 1.6; }
+        .result-item a { color: #007bff; text-decoration: none; font-weight: bold; }
+        .result-item a:hover { text-decoration: underline; }
+        .not-found { color: #dc3545; font-weight: bold; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ค้นหาสิทธิการเบิกค่ารักษาพยาบาล</h1>
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="พิมพ์รหัสรายการ, ชื่อบริการ (เช่น 31001, CBC, ตรวจเลือด)">
+            <button onclick="searchMedicalService()">ค้นหา</button>
+        </div>
+        <div class="quick-reply">
+            <button onclick="setSearchInput('CBC')">CBC</button>
+            <button onclick="setSearchInput('HbA1c')">HbA1c</button>
+            <button onclick="setSearchInput('Urinalysis')">Urinalysis</button>
+            <button onclick="setSearchInput('Cholesterol')">Cholesterol</button>
+        </div>
+        <div id="searchResults" class="result-box">
+            <!-- Search results will be displayed here -->
+        </div>
+    </div>
+
+    <script>
+        const knowledgeBase = [
+            {
+                "labCode": "31001",
+                "nameTh": "การตรวจน้ำปัสสาวะทั่วไป (Urinalysis)",
+                "nameEn": "Urinalysis (Physical + Chemical + Microscopic) PANEL.UA",
+                "rate": 60,
+                "reimbursable": true,
+                "rights": "ทุกสิทธิ (กรมบัญชีกลาง / ประกันสังคม / รัฐวิสาหกิจ)",
+                "cgdCode": "MED0301010",
+                "cpt": "81000",
+                "icd10": "R82.9 (ความผิดปกติอื่นๆ ที่พบในการตรวจปัสสาวะ)",
+                "notes": "รวมค่าตรวจ albumin, glucose หากเบิกรายการนี้ จะไม่สามารถเบิกค่าตรวจ albumin และ glucose ได้อีก ตามหนังสือกรมบัญชีกลาง ที่ กค 0416.2/ว 393 ลว. 10 ต.ค.60 มีผลใช้บังคับสำหรับการรักษา ตั้งแต่วันที่ 1 ม.ค.61 เป็นต้นไป"
+            },
+            {
+                "labCode": "30101",
+                "nameTh": "การตรวจความสมบูรณ์ของเม็ดเลือด (CBC)",
+                "nameEn": "Complete Blood Count (CBC)",
+                "rate": 100,
+                "reimbursable": true,
+                "rights": "ทุกสิทธิ (กรมบัญชีกลาง / ประกันสังคม / รัฐวิสาหกิจ)",
+                "cgdCode": "MED0301020",
+                "cpt": "85025",
+                "icd10": "D69.6 (ภาวะเลือดออกผิดปกติอื่นๆ)",
+                "notes": "ไม่ต้องอดอาหาร"
+            },
+            {
+                "labCode": "32401",
+                "nameTh": "การตรวจระดับน้ำตาลสะสมในเลือด (HbA1c)",
+                "nameEn": "Glycated Hemoglobin (HbA1c)",
+                "rate": 180,
+                "reimbursable": true,
+                "rights": "ทุกสิทธิ (กรมบัญชีกลาง / ประกันสังคม / รัฐวิสาหกิจ)",
+                "cgdCode": "MED0302040",
+                "cpt": "83036",
+                "icd10": "E11.9 (เบาหวานชนิดที่ 2)",
+                "notes": "ตรวจได้ 2 ครั้ง/ปี"
+            },
+            {
+                "labCode": "30201",
+                "nameTh": "การตรวจระดับน้ำตาลในเลือด (Glucose)",
+                "nameEn": "Blood Glucose",
+                "rate": 50,
+                "reimbursable": true,
+                "rights": "ทุกสิทธิ",
+                "cgdCode": "MED0302010",
+                "cpt": "82947",
+                "icd10": "R73.0 (ระดับน้ำตาลในเลือดสูง)",
+                "notes": "ควรงดอาหารและเครื่องดื่ม 8-12 ชั่วโมงก่อนตรวจ (ยกเว้นน้ำเปล่า)"
+            },
+            {
+                "labCode": "30301",
+                "nameTh": "การตรวจไขมันคอเลสเตอรอลรวม (Cholesterol)",
+                "nameEn": "Total Cholesterol",
+                "rate": 60,
+                "reimbursable": true,
+                "rights": "ทุกสิทธิ",
+                "cgdCode": "MED0303010",
+                "cpt": "82465",
+                "icd10": "E78.0 (ภาวะไขมันในเลือดสูง)",
+                "notes": "ควรงดอาหารและเครื่องดื่ม 9-12 ชั่วโมงก่อนตรวจ (ยกเว้นน้ำเปล่า)"
+            },
+            {
+                "labCode": "30302",
+                "nameTh": "การตรวจไขมันไตรกลีเซอไรด์ (Triglyceride)",
+                "nameEn": "Triglyceride",
+                "rate": 80,
+                "reimbursable": true,
+                "rights": "ทุกสิทธิ",
+                "cgdCode": "MED0303020",
+                "cpt": "84478",
+                "icd10": "E78.1 (ภาวะไตรกลีเซอไรด์สูง)",
+                "notes": "ควรงดอาหารและเครื่องดื่ม 9-12 ชั่วโมงก่อนตรวจ (ยกเว้นน้ำเปล่า)"
+            },
+            {
+                "labCode": "30303",
+                "nameTh": "การตรวจไขมัน HDL (HDL-C)",
+                "nameEn": "HDL Cholesterol",
+                "rate": 70,
+                "reimbursable": true,
+                "rights": "ทุกสิทธิ",
+                "cgdCode": "MED0303030",
+                "cpt": "80061",
+                "icd10": "E78.6 (ภาวะไขมันในเลือดผิดปกติอื่นๆ)",
+                "notes": "ไม่ต้องอดอาหาร"
+            },
+            {
+                "labCode": "30304",
+                "nameTh": "การตรวจไขมัน LDL (LDL-C)",
+                "nameEn": "LDL Cholesterol",
+                "rate": 70,
+                "reimbursable": true,
+                "rights": "ทุกสิทธิ",
+                "cgdCode": "MED0303040",
+                "cpt": "80061",
+                "icd10": "E78.2 (ภาวะไขมัน LDL สูง)",
+                "notes": "ไม่ต้องอดอาหาร"
+            },
+            {
+                "labCode": "30401",
+                "nameTh": "การตรวจการทำงานของตับ (SGOT/AST)",
+                "nameEn": "SGOT/AST",
+                "rate": 50,
+                "reimbursable": true,
+                "rights": "ทุกสิทธิ",
+                "cgdCode": "MED0304010",
+                "cpt": "84450",
+                "icd10": "R74.0 (ระดับเอนไซม์ตับผิดปกติ)",
+                "notes": "ไม่ต้องอดอาหาร"
+            },
+            {
+                "labCode": "30402",
+                "nameTh": "การตรวจการทำงานของตับ (SGPT/ALT)",
+                "nameEn": "SGPT/ALT",
+                "rate": 50,
+                "reimbursable": true,
+                "rights": "ทุกสิทธิ",
+                "cgdCode": "MED0304020",
+                "cpt": "84460",
+                "icd10": "R74.0 (ระดับเอนไซม์ตับผิดปกติ)",
+                "notes": "ไม่ต้องอดอาหาร"
+            }
+        ];
+
+        function generateCgdLink(query) {
+            return `https://mbdb.cgd.go.th/wel/searchmed.jsp?method=search&service_name=${encodeURIComponent(query)}`;
+        }
+
+        function displayResult(item, query) {
+            const searchResultsDiv = document.getElementById('searchResults');
+            searchResultsDiv.innerHTML = ''; // Clear previous results
+
+            if (item) {
+                const cgdLink = generateCgdLink(query);
+                const resultHtml = `
+                    <div class="result-item">
+                        <h3>🔍 รายการ: ${item.nameTh} (${item.nameEn})</h3>
+                        <p>💵 อัตรา: ${item.rate.toFixed(2)} บาท</p>
+                        <p>✅ เบิกได้ตามสิทธิ: ${item.rights}</p>
+                        ${item.notes ? `<p>📝 หมายเหตุ: ${item.notes}</p>` : ''}
+                        <p>ℹ️ รหัสมาตรฐาน:</p>
+                        <ul>
+                            <li>CPT: ${item.cpt}</li>
+                            <li>ICD-10: ${item.icd10}</li>
+                            <li>รหัส CGD: ${item.cgdCode}</li>
+                        </ul>
+                        <p>🔗 ดูข้อมูลทางการ: <a href="${cgdLink}" target="_blank">คลิกที่นี่เพื่อดูใน mbdb.cgd.go.th</a></p>
+                    </div>
+                `;
+                searchResultsDiv.innerHTML = resultHtml;
+            } else {
+                const cgdLink = generateCgdLink(query);
+                searchResultsDiv.innerHTML = `
+                    <p class="not-found">❌ ไม่พบข้อมูลในระบบ</p>
+                    <p>แต่คุณสามารถค้นหาอย่างเป็นทางการได้ที่: <a href="${cgdLink}" target="_blank">คลิกเพื่อค้นหา "${query}" ใน mbdb.cgd.go.th</a></p>
+                    <p>ข้อมูลอาจอัปเดตล่าสุดในเว็บกรมบัญชีกลาง</p>
+                `;
+            }
+        }
+
+        function searchMedicalService() {
+            const query = document.getElementById('searchInput').value.trim();
+            if (!query) {
+                document.getElementById('searchResults').innerHTML = '';
+                return;
+            }
+
+            const lowerCaseQuery = query.toLowerCase();
+            let foundItem = null;
+
+            // Fuzzy search logic
+            for (const item of knowledgeBase) {
+                if (item.labCode.toLowerCase().includes(lowerCaseQuery) ||
+                    item.nameTh.toLowerCase().includes(lowerCaseQuery) ||
+                    item.nameEn.toLowerCase().includes(lowerCaseQuery) ||
+                    item.cpt.toLowerCase().includes(lowerCaseQuery) ||
+                    item.icd10.toLowerCase().includes(lowerCaseQuery) ||
+                    item.cgdCode.toLowerCase().includes(lowerCaseQuery)) {
+                    foundItem = item;
+                    break;
+                }
+            }
+            displayResult(foundItem, query);
+        }
+
+        function setSearchInput(value) {
+            document.getElementById('searchInput').value = value;
+            searchMedicalService();
+        }
+    </script>
+</body>
+</html>
