@@ -114,6 +114,19 @@ def populate_initial_data():
             "icd10_code": "M10.9",
             "icd10_desc": "โรคเกาต์ไม่ระบุรายละเอียด",
             "notes": "ไม่ต้องอดอาหาร"
+        },
+        {
+            "lab_code": "64101",
+            "name_th": "ขูดหินน้ำลายทั้งปาก",
+            "name_en": "Full Mouth Scaling",
+            "rate_baht": 280.00,
+            "reimbursable": True,
+            "rights": "ทุกสิทธิ",
+            "cgd_code": "DENT010101",
+            "cpt_code": "D1110",
+            "icd10_code": "K03.6",
+            "icd10_desc": "Deposits on teeth",
+            "notes": "ตามหนังสือกรมบัญชีกลาง ด่วนที่สุด ที่ กค 0431.2/ว 246 ลว. 16 มิ.ย.59 และด่วนที่สุด ที่ กค 0416.2/ ว 369 ลว. 21 ก.ย.59"
         }
     ]
 
