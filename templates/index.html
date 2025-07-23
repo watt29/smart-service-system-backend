@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Service System - ค้นหาสิทธิการเบิกค่ารักษาพยาบาล</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            color: #333;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 600px;
+            text-align: center;
+        }
+        h1 {
+            color: #0056b3;
+            margin-bottom: 25px;
+            font-size: 1.8em;
+        }
+        .search-box {
+            display: flex;
+            margin-bottom: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .search-box input[type="text"] {
+            flex-grow: 1;
+            padding: 12px 15px;
+            border: none;
+            outline: none;
+            font-size: 1em;
+        }
+        .search-box button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: background-color 0.3s ease;
+        }
+        .search-box button:hover {
+            background-color: #0056b3;
+        }
+        .quick-reply-container {
+            margin-top: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+        }
+        .quick-reply-button {
+            background-color: #e9ecef;
+            color: #495057;
+            border: 1px solid #ced4da;
+            padding: 8px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+        .quick-reply-button:hover {
+            background-color: #007bff;
+            color: white;
+        }
+        .result-box {
+            background-color: #eaf4f4;
+            border: 1px solid #cce7e7;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 30px;
+            text-align: left;
+            white-space: pre-wrap; /* เพื่อรักษารูปแบบการขึ้นบรรทัดใหม่ */
+            word-wrap: break-word;
+        }
+        .result-box a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        .result-box a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ระบบผู้ช่วยสิทธิการเบิกค่ารักษาพยาบาล</h1>
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="ค้นหารหัสรายการ, ชื่อบริการ (เช่น HbA1c, CBC, 31001)">
+            <button onclick="performSearch()">ค้นหา</button>
+        </div>
+        <div class="quick-reply-container" id="quickReplyContainer">
+            <!-- Quick Reply Buttons will be inserted here by JavaScript -->
+        </div>
+        <div class="result-box" id="resultBox">
+            <!-- Search results will be displayed here -->
+            <p>กรุณาพิมพ์คำค้นหา หรือเลือกจากปุ่ม Quick Reply ด้านล่าง</p>
+        </div>
+    </div>
+
+    <script>
+        const KNOWLEDGE_BASE_ITEMS = [
+            { "query": "CBC", "display": "CBC" },
+            { "query": "HbA1c", "display": "HbA1c" },
+            { "query": "31001", "display": "Urinalysis" }
+        ];
+
+        // Function to generate CGD search link (same as in Python)
+        function generateCgdSearchLink(query) {
+            const encodedQuery = encodeURIComponent(query);
+            return `https://mbdb.cgd.go.th/wel/searchmed.jsp?method=search&service_name=${encodedQuery}`;
+        }
+
+        // Function to simulate search in knowledge base (simplified for UI mockup)
+        function simulateSearch(query) {
+            const queryLower = query.toLowerCase();
+            const foundItem = KNOWLEDGE_BASE_ITEMS.find(item => 
+                item.query.toLowerCase() === queryLower || 
+                item.display.toLowerCase() === queryLower
+            );
+
+            if (foundItem) {
+                // Simulate a detailed response for known items
+                let response = `🔍 รายการ: ${foundItem.display}\n`;
+                response += `💵 อัตรา: (ข้อมูลจำลอง)\n`;
+                response += `✅ เบิกได้ตามสิทธิ: (ข้อมูลจำลอง)\n`;
+                response += `🔗 ดูข้อมูลทางการ:\n`;
+                response += `<a href="${generateCgdSearchLink(query)}" target="_blank">คลิกที่นี่เพื่อดูใน mbdb.cgd.go.th</a>\n`;
+                response += `ℹ️ รหัสมาตรฐาน: (ข้อมูลจำลอง)\n`;
+                response += `\n*ข้อมูลนี้มาจากฐานความรู้ภายในของระบบ (จำลอง) โปรดตรวจสอบข้อมูลล่าสุดและเป็นทางการจากลิงก์กรมบัญชีกลาง*`;
+                return response;
+            } else {
+                // Not found in simulated knowledge base
+                let response = `❌ ไม่พบข้อมูล \"${query}\" ในระบบฐานความรู้ภายใน (จำลอง)\n\n`;
+                response += `คุณสามารถค้นหาข้อมูลที่เป็นทางการและล่าสุดได้ที่:\n`;
+                response += `<a href="${generateCgdSearchLink(query)}" target="_blank">คลิกเพื่อค้นหา \"${query}\" ใน mbdb.cgd.go.th</a>`;
+                return response;
+            }
+        }
+
+        function performSearch(query = null) {
+            const searchInput = document.getElementById('searchInput');
+            const resultBox = document.getElementById('resultBox');
+            const actualQuery = query || searchInput.value.trim();
+
+            if (actualQuery) {
+                resultBox.innerHTML = simulateSearch(actualQuery);
+            } else {
+                resultBox.innerHTML = '<p>กรุณาพิมพ์คำค้นหา หรือเลือกจากปุ่ม Quick Reply ด้านล่าง</p>';
+            }
+        }
+
+        function createQuickReplyButtons() {
+            const quickReplyContainer = document.getElementById('quickReplyContainer');
+            KNOWLEDGE_BASE_ITEMS.forEach(item => {
+                const button = document.createElement('button');
+                button.className = 'quick-reply-button';
+                button.textContent = item.display;
+                button.onclick = () => {
+                    document.getElementById('searchInput').value = item.query; // Set input value
+                    performSearch(item.query);
+                };
+                quickReplyContainer.appendChild(button);
+            });
+        }
+
+        // Initialize quick reply buttons on page load
+        window.onload = createQuickReplyButtons;
+    </script>
+</body>
+</html>
