@@ -318,7 +318,8 @@ def handle_message(event):
     user_message_lower = user_message.lower()
 
     # DEBUG PRINT: Check user_id and ADMIN_USER_ID
-    print(f"DEBUG: Incoming user_id: '{user_id}', Configured ADMIN_USER_ID: '{ADMIN_USER_ID}'")
+    print(f"DEBUG: Incoming user_id: '{user_id}'")
+    print(f"DEBUG: Configured ADMIN_USER_ID from env: '{ADMIN_USER_ID}'")
     print(f"DEBUG: Message: '{user_message_lower}'")
 
     # --- Admin Conversation State Machine ---
