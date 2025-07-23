@@ -60,7 +60,7 @@ def populate_initial_data():
             "cgd_code": "MED0301020",
             "cpt_code": "85025",
             "icd10_code": "D69.6",
-            "icd10_desc": "ภาวะเลือดออกผิดปกติอื่นๆ",
+            "icd10_desc": "ภาภาวะเลือดออกผิดปกติอื่นๆ",
             "notes": "อดอาหาร 8 ชม."
         },
         {
@@ -146,8 +146,9 @@ def format_response(item: dict, original_query: str) -> str:
     if item.get("notes"):
         response += f"📝 หมายเหตุ: {item['notes']}\n"
     
+    cgd_link = generate_cgd_search_link(original_query)
     response += f"🔗 ดูข้อมูลทางการ:\n"
-    response += f"[คลิกที่นี่เพื่อดูใน mbdb.cgd.go.th]({generate_cgd_search_link(original_query)})\n"
+    response += f"[{cgd_link}]({cgd_link})\n"
     
     response += f"ℹ️ รหัสมาตรฐาน:\n"
     response += f"- CPT: {item['cpt_code']}\n"
@@ -163,10 +164,54 @@ def handle_user_query(query: str) -> dict:
         return {"message": format_response(found_item, query), "found": True}
     else:
         # ไม่พบข้อมูลในฐานความรู้ภายใน
+        cgd_link = generate_cgd_search_link(query)
         response = f"❌ ไม่พบข้อมูล \"{query}\" ในระบบฐานความรู้ภายใน\n\n"
         response += f"คุณสามารถค้นหาข้อมูลที่เป็นทางการและล่าสุดได้ที่:\n"
-        response += f"[คลิกเพื่อค้นหา \"{query}\" ใน mbdb.cgd.go.th]({generate_cgd_search_link(query)})"
+        response += f"[{cgd_link}]({cgd_link})"
         return {"message": response, "found": False}
+
+def update_item_in_db(lab_code: str, updates: dict) -> bool:
+    """อัปเดตข้อมูลในฐานข้อมูล"""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    set_clauses = []
+    values = []
+    for key, value in updates.items():
+        if key == 'reimbursable':
+            set_clauses.append(f"{key} = ?")
+            values.append(1 if value.lower() == 'true' else 0)
+        elif key == 'rate_baht':
+            set_clauses.append(f"{key} = ?")
+            values.append(float(value))
+        else:
+            set_clauses.append(f"{key} = ?")
+            values.append(value)
+    
+    values.append(lab_code)
+    
+    try:
+        cursor.execute(f"UPDATE items SET {', '.join(set_clauses)} WHERE lab_code = ?", values)
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        print(f"Error updating item: {e}")
+        return False
+    finally:
+        conn.close()
+
+def delete_item_from_db(lab_code: str) -> bool:
+    """ลบข้อมูลจากฐานข้อมูล"""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM items WHERE lab_code = ?", (lab_code,))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        print(f"Error deleting item: {e}")
+        return False
+    finally:
+        conn.close()
 
 # --- LINE Bot Integration ---
 
@@ -197,17 +242,15 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 # สร้าง Quick Reply Buttons จากข้อมูลในฐานข้อมูล
 # ต้องเรียกใช้หลังจาก init_db และ populate_initial_data
 def get_quick_reply_items():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT name_en FROM items")
-    items = [row[0] for row in cursor.fetchall()]
-    conn.close()
+    """สร้าง Quick Reply Buttons สำหรับรายการยอดนิยม"""
+    # รายการยอดนิยมที่กำหนดไว้ล่วงหน้า
+    popular_items = ["CBC", "HbA1c", "Urine", "Cholesterol"]
     
     quick_reply_buttons = []
-    for item_name_en in items:
+    for item in popular_items:
         quick_reply_buttons.append(
             QuickReplyButton(
-                action=MessageAction(label=item_name_en, text=item_name_en)
+                action=MessageAction(label=item, text=item)
             )
         )
     return QuickReply(items=quick_reply_buttons)
@@ -242,47 +285,102 @@ def handle_message(event):
     user_message_lower = user_message.lower()
 
     # --- Admin Commands ---
-    if user_id == ADMIN_USER_ID and user_message_lower.startswith("admin add:"):
-        try:
-            data_str = user_message[len("admin add:"):].strip()
-            parts = data_str.split(', ')
-            new_item = {}
-            for part in parts:
-                key, value = part.split('=', 1)
-                new_item[key.strip()] = value.strip()
-            
-            # แปลง reimbursable เป็น boolean
-            if 'reimbursable' in new_item:
-                new_item['reimbursable'] = (new_item['reimbursable'].lower() == 'true')
-            
-            conn = sqlite3.connect(DB_FILE)
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO items (lab_code, name_th, name_en, rate_baht, reimbursable, rights, cgd_code, cpt_code, icd10_code, icd10_desc, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                new_item.get('lab_code'), new_item.get('name_th'), new_item.get('name_en'), 
-                float(new_item.get('rate_baht', 0)), 1 if new_item.get('reimbursable', False) else 0, 
-                new_item.get('rights'), new_item.get('cgd_code'), new_item.get('cpt_code'), 
-                new_item.get('icd10_code'), new_item.get('icd10_desc'), new_item.get('notes')
-            ))
-            conn.commit()
-            conn.close()
-            
-            # อัปเดต Quick Reply Buttons หลังจากเพิ่มข้อมูลใหม่
-            global quick_reply
-            quick_reply = get_quick_reply_items()
+    if user_id == ADMIN_USER_ID:
+        if user_message_lower.startswith("admin add:"):
+            try:
+                data_str = user_message[len("admin add:"):].strip()
+                parts = data_str.split(', ')
+                new_item = {}
+                for part in parts:
+                    key, value = part.split('=', 1)
+                    new_item[key.strip()] = value.strip()
+                
+                # แปลง reimbursable เป็น boolean
+                if 'reimbursable' in new_item:
+                    new_item['reimbursable'] = (new_item['reimbursable'].lower() == 'true')
+                
+                conn = sqlite3.connect(DB_FILE)
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO items (lab_code, name_th, name_en, rate_baht, reimbursable, rights, cgd_code, cpt_code, icd10_code, icd10_desc, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    new_item.get('lab_code'), new_item.get('name_th'), new_item.get('name_en'), 
+                    float(new_item.get('rate_baht', 0)), 1 if new_item.get('reimbursable', False) else 0, 
+                    new_item.get('rights'), new_item.get('cgd_code'), new_item.get('cpt_code'), 
+                    new_item.get('icd10_code'), new_item.get('icd10_desc'), new_item.get('notes')
+                ))
+                conn.commit()
+                conn.close()
 
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text=f"✅ เพิ่มข้อมูล \"{new_item.get('name_th', new_item.get('lab_code'))}\" สำเร็จแล้ว")
-            )
-        except Exception as e:
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text=f"❌ เกิดข้อผิดพลาดในการเพิ่มข้อมูล: {e}\n\nรูปแบบที่ถูกต้อง: admin add: lab_code=..., name_th=..., ...")
-            )
-        return
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    TextSendMessage(text=f"✅ เพิ่มข้อมูล \"{new_item.get('name_th', new_item.get('lab_code'))}\" สำเร็จแล้ว")
+                )
+            except Exception as e:
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    TextSendMessage(text=f"❌ เกิดข้อผิดพลาดในการเพิ่มข้อมูล: {e}\n\nรูปแบบที่ถูกต้อง: admin add: lab_code=..., name_th=..., ...")
+                )
+            return
+        
+        elif user_message_lower.startswith("admin edit:"):
+            try:
+                data_str = user_message[len("admin edit:"):].strip()
+                parts = data_str.split(', ')
+                lab_code = None
+                updates = {}
+                for part in parts:
+                    key, value = part.split('=', 1)
+                    if key.strip() == 'lab_code':
+                        lab_code = value.strip()
+                    else:
+                        updates[key.strip()] = value.strip()
+                
+                if not lab_code:
+                    raise ValueError("ต้องระบุ lab_code สำหรับการแก้ไข")
+
+                if update_item_in_db(lab_code, updates):
+                    line_bot_api.reply_message(
+                        event.reply_token,
+                        TextSendMessage(text=f"✅ แก้ไขข้อมูลรายการ {lab_code} สำเร็จแล้ว")
+                    )
+                else:
+                    line_bot_api.reply_message(
+                        event.reply_token,
+                        TextSendMessage(text=f"❌ ไม่พบรายการ {lab_code} หรือไม่สามารถแก้ไขข้อมูลได้")
+                    )
+            except Exception as e:
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    TextSendMessage(text=f"❌ เกิดข้อผิดพลาดในการแก้ไขข้อมูล: {e}\n\nรูปแบบที่ถูกต้อง: admin edit: lab_code=..., field=value, ...")
+                )
+            return
+
+        elif user_message_lower.startswith("admin delete:"):
+            try:
+                data_str = user_message[len("admin delete:"):].strip()
+                parts = data_str.split('=', 1)
+                if len(parts) != 2 or parts[0].strip() != 'lab_code':
+                    raise ValueError("รูปแบบคำสั่งไม่ถูกต้อง ต้องระบุ lab_code")
+                lab_code = parts[1].strip()
+
+                if delete_item_from_db(lab_code):
+                    line_bot_api.reply_message(
+                        event.reply_token,
+                        TextSendMessage(text=f"✅ ลบข้อมูลรายการ {lab_code} สำเร็จแล้ว")
+                    )
+                else:
+                    line_bot_api.reply_message(
+                        event.reply_token,
+                        TextSendMessage(text=f"❌ ไม่พบรายการ {lab_code} หรือไม่สามารถลบข้อมูลได้")
+                    )
+            except Exception as e:
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    TextSendMessage(text=f"❌ เกิดข้อผิดพลาดในการลบข้อมูล: {e}\n\nรูปแบบที่ถูกต้อง: admin delete: lab_code=...")
+                )
+            return
 
     # --- User Queries ---
     # ตรวจสอบว่าเป็นคำทักทายหรือไม่
