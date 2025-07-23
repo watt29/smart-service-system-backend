@@ -3,7 +3,7 @@ import os
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
+from linebot.models import MessageEvent, TextMessage, TextSendMessage, QuickReply, QuickReplyButton, MessageAction
 
 # ฐานความรู้ภายใน (Internal Knowledge Base) - ข้อมูลที่ได้รับการยืนยันแล้วเท่านั้น
 KNOWLEDGE_BASE = [
@@ -123,6 +123,18 @@ if not LINE_CHANNEL_SECRET:
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
+# สร้าง Quick Reply Buttons จาก KNOWLEDGE_BASE
+quick_reply_buttons = []
+for item in KNOWLEDGE_BASE:
+    quick_reply_buttons.append(
+        QuickReplyButton(
+            action=MessageAction(label=item["name_en"], text=item["name_en"])
+        )
+    )
+
+# สร้าง QuickReply object
+quick_reply = QuickReply(items=quick_reply_buttons)
+
 @app.route("/callback", methods=['POST'])
 def callback():
     # get X-Line-Signature header value
@@ -143,12 +155,21 @@ def callback():
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    user_message = event.message.text
-    reply_message = handle_user_query(user_message)
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=reply_message)
-    )
+    user_message = event.message.text.strip()
+    reply_message_text = handle_user_query(user_message)
+    
+    # ตรวจสอบว่าควรส่ง Quick Reply ด้วยหรือไม่
+    # ส่ง Quick Reply ถ้าข้อความไม่พบในฐานความรู้ หรือเป็นข้อความทักทาย
+    if "ไม่พบข้อมูล" in reply_message_text or user_message.lower() in ["สวัสดี", "เมนู", "hi", "hello"]:
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=reply_message_text, quick_reply=quick_reply)
+        )
+    else:
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=reply_message_text)
+        )
 
 # สำหรับรัน Flask app
 if __name__ == "__main__":
