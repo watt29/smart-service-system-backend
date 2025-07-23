@@ -649,7 +649,9 @@ def handle_message(event):
 
     # --- Admin Menu ---
     if user_id == ADMIN_USER_ID:
-        if user_message_lower in ["admin", "เมนูแอดมิน", "แอดมิน"]:
+        # Admin menu trigger
+        print(f"Received text: '{user_message_lower}'") # Temporary debug print
+        if user_message_lower.strip() in ["admin", "แอดมิน", "เมนูแอดมิน"]:
             admin_menu_buttons = QuickReply(items=[
                 QuickReplyButton(action=MessageAction(label="➕ เพิ่มข้อมูล", text="admin_add_start")),
                 QuickReplyButton(action=MessageAction(label="✏️ แก้ไขข้อมูล", text="admin_edit_start")),
