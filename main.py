@@ -343,11 +343,7 @@ def handle_message(event):
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ รหัส: " + user_message + "\nต่อไป ป้อนชื่อบริการ (ภาษาไทย):"))
                 return
 
-            elif step == 'waiting_name_th':
-                state_info['data']['name_th'] = user_message
-                state_info['step'] = 'waiting_name_en'
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ ชื่อไทย: " + user_message + "
-ต่อไป ป้อนชื่อบริการ (ภาษาอังกฤษ):"))
+            elif step == 'waiting_name_th':                state_info['data']['name_th'] = user_message                state_info['step'] = 'waiting_name_en'                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ ชื่อไทย: " + user_message + "\nต่อไป ป้อนชื่อบริการ (ภาษาอังกฤษ):"))
                 return
 
             elif step == 'waiting_name_en':
