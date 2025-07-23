@@ -265,6 +265,10 @@ if not LINE_CHANNEL_SECRET:
     print("Please set it before running the application.")
     exit(1)
 
+if not ADMIN_USER_ID:
+    print("Error: ADMIN_USER_ID environment variable not set.")
+    print("Admin features will not be available. Please set it in Heroku Config Vars.")
+
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
@@ -312,6 +316,10 @@ def handle_message(event):
     user_message = event.message.text.strip()
     user_id = event.source.user_id # ดึง User ID ของผู้ส่งข้อความ
     user_message_lower = user_message.lower()
+
+    # DEBUG PRINT: Check user_id and ADMIN_USER_ID
+    print(f"DEBUG: Incoming user_id: '{user_id}', Configured ADMIN_USER_ID: '{ADMIN_USER_ID}'")
+    print(f"DEBUG: Message: '{user_message_lower}'")
 
     # --- Admin Conversation State Machine ---
     if user_id in admin_states:
