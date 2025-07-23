@@ -1,4 +1,4 @@
-
 knowledge_base.db
 __pycache__/
 venv/
+heroku_logs.txt
