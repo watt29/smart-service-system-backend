@@ -138,6 +138,19 @@ def search_knowledge_base(query: str):
     conn.close()
     return None
 
+def get_all_items_from_db():
+    """ดึงข้อมูลทั้งหมดจากฐานข้อมูล"""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM items")
+    rows = cursor.fetchall()
+    columns = [description[0] for description in cursor.description]
+    items = []
+    for row in rows:
+        items.append(dict(zip(columns, row)))
+    conn.close()
+    return items
+
 def format_response(item: dict, original_query: str) -> str:
     """จัดรูปแบบคำตอบสำหรับ LINE Bot เมื่อพบข้อมูลในฐานความรู้"""
     response = f"🔍 รายการ: {item['name_th']} ({item['name_en']})\n"
@@ -267,19 +280,22 @@ def handle_message(event):
                 # TODO: Check for duplicate lab_code
                 state_info['data']['lab_code'] = user_message
                 state_info['step'] = 'waiting_name_th'
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ รหัส: " + user_message + "\nต่อไป ป้อนชื่อบริการ (ภาษาไทย):"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ รหัส: " + user_message + "
+ต่อไป ป้อนชื่อบริการ (ภาษาไทย):"))
                 return
 
             elif step == 'waiting_name_th':
                 state_info['data']['name_th'] = user_message
                 state_info['step'] = 'waiting_name_en'
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ ชื่อไทย: " + user_message + "\nต่อไป ป้อนชื่อบริการ (ภาษาอังกฤษ):"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ ชื่อไทย: " + user_message + "
+ต่อไป ป้อนชื่อบริการ (ภาษาอังกฤษ):"))
                 return
 
             elif step == 'waiting_name_en':
                 state_info['data']['name_en'] = user_message
                 state_info['step'] = 'waiting_rate_baht'
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ ชื่ออังกฤษ: " + user_message + "\nต่อไป ป้อนอัตราค่าบริการ (ตัวเลขเท่านั้น):"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ ชื่ออังกฤษ: " + user_message + "
+ต่อไป ป้อนอัตราค่าบริการ (ตัวเลขเท่านั้น):"))
                 return
 
             elif step == 'waiting_rate_baht':
@@ -287,47 +303,54 @@ def handle_message(event):
                     rate = float(user_message)
                     state_info['data']['rate_baht'] = rate
                     state_info['step'] = 'waiting_reimbursable'
-                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"✔️ อัตรา: {rate:.2f} บาท\nต่อไป รายการนี้เบิกได้หรือไม่? (พิมพ์ `yes` หรือ `no`):"))
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"✔️ อัตรา: {rate:.2f} บาท
+ต่อไป รายการนี้เบิกได้หรือไม่? (พิมพ์ `yes` หรือ `no`):"))
                     return
                 except ValueError:
                     line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ รูปแบบอัตราไม่ถูกต้อง! กรุณาป้อนเป็นตัวเลขเท่านั้น (เช่น 150 หรือ 80.50)"))
                     return
             
-                        elif step == 'waiting_reimbursable':
+            elif step == 'waiting_reimbursable':
                 reimbursable = user_message.lower() in ['yes', 'y', 'true', 'ใช่']
                 state_info['data']['reimbursable'] = reimbursable
                 state_info['step'] = 'waiting_rights'
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ เบิกได้: " + ("ใช่" if reimbursable else "ไม่") + "\nต่อไป ป้อนสิทธิที่ใช้ได้ (เช่น ทุกสิทธิ, กรมบัญชีกลาง):"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ เบิกได้: " + ("ใช่" if reimbursable else "ไม่") + "
+ต่อไป ป้อนสิทธิที่ใช้ได้ (เช่น ทุกสิทธิ, กรมบัญชีกลาง):"))
                 return
 
             elif step == 'waiting_rights':
                 state_info['data']['rights'] = user_message
                 state_info['step'] = 'waiting_cgd_code'
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ สิทธิ: " + user_message + "\nต่อไป ป้อนรหัสกรมบัญชีกลาง (CGD Code) (ถ้ามี):"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ สิทธิ: " + user_message + "
+ต่อไป ป้อนรหัสกรมบัญชีกลาง (CGD Code) (ถ้ามี):"))
                 return
 
             elif step == 'waiting_cgd_code':
                 state_info['data']['cgd_code'] = user_message
                 state_info['step'] = 'waiting_cpt_code'
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ รหัส CGD: " + user_message + "\nต่อไป ป้อนรหัส CPT (ถ้ามี):"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ รหัส CGD: " + user_message + "
+ต่อไป ป้อนรหัส CPT (ถ้ามี):"))
                 return
 
             elif step == 'waiting_cpt_code':
                 state_info['data']['cpt_code'] = user_message
                 state_info['step'] = 'waiting_icd10_code'
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ รหัส CPT: " + user_message + "\nต่อไป ป้อนรหัส ICD-10 (ถ้ามี):"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ รหัส CPT: " + user_message + "
+ต่อไป ป้อนรหัส ICD-10 (ถ้ามี):"))
                 return
 
             elif step == 'waiting_icd10_code':
                 state_info['data']['icd10_code'] = user_message
                 state_info['step'] = 'waiting_icd10_desc'
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ รหัส ICD-10: " + user_message + "\nต่อไป ป้อนคำอธิบาย ICD-10 (ถ้ามี):"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ รหัส ICD-10: " + user_message + "
+ต่อไป ป้อนคำอธิบาย ICD-10 (ถ้ามี):"))
                 return
 
             elif step == 'waiting_icd10_desc':
                 state_info['data']['icd10_desc'] = user_message
                 state_info['step'] = 'waiting_notes'
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ คำอธิบาย ICD-10: " + user_message + "\nสุดท้าย ป้อนหมายเหตุ (ถ้ามี):"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ คำอธิบาย ICD-10: " + user_message + "
+สุดท้าย ป้อนหมายเหตุ (ถ้ามี):"))
                 return
 
             elif step == 'waiting_notes':
@@ -335,10 +358,13 @@ def handle_message(event):
                 state_info['step'] = 'waiting_confirmation'
                 
                 # สร้างข้อความสรุปข้อมูล
-                summary = "📝 สรุปข้อมูลที่จะเพิ่ม:\n"
+                summary = "📝 สรุปข้อมูลที่จะเพิ่ม:
+"
                 for key, value in state_info['data'].items():
-                    summary += f"- {key}: {value}\n"
-                summary += "\nพิมพ์ `confirm` เพื่อยืนยันการเพิ่มข้อมูล หรือ `cancel` เพื่อยกเลิก"
+                    summary += f"- {key}: {value}
+"
+                summary += "
+พิมพ์ `confirm` เพื่อยืนยันการเพิ่มข้อมูล หรือ `cancel` เพื่อยกเลิก"
 
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text=summary))
                 return
@@ -370,6 +396,194 @@ def handle_message(event):
                     line_bot_api.reply_message(event.reply_token, TextSendMessage(text="🚫 ยกเลิกการเพิ่มข้อมูลแล้ว"))
                 return
 
+        # --- Edit Item State Machine ---
+        elif state == 'editing_item':
+            step = state_info.get('step')
+
+            if step == 'waiting_edit_lab_code':
+                lab_code_to_edit = user_message.strip()
+                found_item = search_knowledge_base(lab_code_to_edit)
+                if found_item:
+                    state_info['data'] = found_item # Store the original item data
+                    state_info['step'] = 'waiting_field_to_edit'
+                    
+                    # Display current data and ask for field to edit
+                    current_data_msg = "พบข้อมูลสำหรับรหัส " + lab_code_to_edit + ":
+"
+                    for key, value in found_item.items():
+                        current_data_msg += f"- {key}: {value}
+"
+                    current_data_msg += "
+กรุณาป้อนชื่อฟิลด์ที่ต้องการแก้ไข (เช่น name_th, rate_baht, notes):"
+                    
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=current_data_msg))
+                else:
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ไม่พบรายการด้วยรหัส " + lab_code_to_edit + "
+กรุณาป้อนรหัสที่ถูกต้อง หรือพิมพ์ `cancel` เพื่อยกเลิก"))
+                return
+
+            elif step == 'waiting_field_to_edit':
+                field_to_edit = user_message.strip().lower()
+                # Validate if the field exists in the item data
+                if field_to_edit in state_info['data']:
+                    state_info['data']['field_to_edit'] = field_to_edit
+                    state_info['step'] = 'waiting_new_value'
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"✔️ เลือกฟิลด์: {field_to_edit}\nกรุณาป้อนค่าใหม่สำหรับ {field_to_edit}:"))
+                else:
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ไม่พบฟิลด์ที่ระบุ กรุณาป้อนชื่อฟิลด์ที่ถูกต้อง หรือพิมพ์ `cancel` เพื่อยกเลิก"))
+                return
+
+            elif step == 'waiting_new_value':
+                field_to_edit = state_info['data']['field_to_edit']
+                new_value = user_message.strip()
+
+                # Type conversion for specific fields
+                if field_to_edit == 'rate_baht':
+                    try:
+                        new_value = float(new_value)
+                    except ValueError:
+                        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ รูปแบบอัตราไม่ถูกต้อง! กรุณาป้อนเป็นตัวเลขเท่านั้น (เช่น 150 หรือ 80.50)"))
+                        return
+                elif field_to_edit == 'reimbursable':
+                    new_value = new_value.lower() in ['yes', 'y', 'true', 'ใช่']
+
+                state_info['data']['new_value'] = new_value
+                state_info['step'] = 'waiting_edit_confirmation'
+
+                # Prepare confirmation message
+                original_item = state_info['data']
+                confirmation_msg = f"คุณต้องการแก้ไขข้อมูลนี้ใช่หรือไม่?\n"
+                confirmation_msg += f"รหัส: {original_item['lab_code']}\n"
+                confirmation_msg += f"ฟิลด์: {field_to_edit}\n"
+                confirmation_msg += f"ค่าเดิม: {original_item[field_to_edit]}\n"
+                confirmation_msg += f"ค่าใหม่: {new_value}\n\n"
+                confirmation_msg += "พิมพ์ `confirm` เพื่อยืนยัน หรือ `cancel` เพื่อยกเลิก"
+
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=confirmation_msg))
+                return
+
+            elif step == 'waiting_edit_confirmation':
+                if user_message.lower() == 'confirm':
+                    try:
+                        item_to_update = state_info['data']
+                        lab_code = item_to_update['lab_code']
+                        field_to_edit = item_to_update['field_to_edit']
+                        new_value = item_to_update['new_value']
+
+                        conn = sqlite3.connect(DB_FILE)
+                        cursor = conn.cursor()
+                        
+                        # Special handling for reimbursable (boolean to int)
+                        if field_to_edit == 'reimbursable':
+                            new_value = 1 if new_value else 0
+
+                        cursor.execute(f"UPDATE items SET {field_to_edit} = ? WHERE lab_code = ?", (new_value, lab_code))
+                        conn.commit()
+                        conn.close()
+                        del admin_states[user_id]
+                        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"✅ แก้ไขข้อมูลรายการ {lab_code} สำเร็จแล้ว!"))
+                    except Exception as e:
+                        del admin_states[user_id]
+                        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"❌ เกิดข้อผิดพลาดในการแก้ไขข้อมูล: {e}"))
+                else:
+                    del admin_states[user_id]
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="🚫 ยกเลิกการแก้ไขข้อมูลแล้ว"))
+                return
+
+        # --- Delete Item State Machine ---
+        elif state == 'deleting_item':
+            step = state_info.get('step')
+
+            if step == 'waiting_delete_lab_code':
+                lab_code_to_delete = user_message.strip()
+                found_item = search_knowledge_base(lab_code_to_delete)
+                if found_item:
+                    state_info['data'] = found_item # Store the item data for confirmation
+                    state_info['step'] = 'waiting_delete_confirmation'
+                    
+                    # Display item data and ask for confirmation
+                    delete_confirmation_msg = "คุณต้องการลบข้อมูลนี้ใช่หรือไม่?\n"
+                    delete_confirmation_msg += f"รหัส: {found_item['lab_code']}\n"
+                    delete_confirmation_msg += f"ชื่อไทย: {found_item['name_th']}\n"
+                    delete_confirmation_msg += f"ชื่ออังกฤษ: {found_item['name_en']}\n\n"
+                    delete_confirmation_msg += "พิมพ์ `confirm` เพื่อยืนยันการลบ หรือ `cancel` เพื่อยกเลิก"
+                    
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=delete_confirmation_msg))
+                else:
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ไม่พบรายการด้วยรหัส " + lab_code_to_delete + "\nกรุณาป้อนรหัสที่ถูกต้อง หรือพิมพ์ `cancel` เพื่อยกเลิก"))
+                return
+
+            elif step == 'waiting_delete_confirmation':
+                if user_message.lower() == 'confirm':
+                    try:
+                        item_to_delete = state_info['data']
+                        lab_code = item_to_delete['lab_code']
+
+                        conn = sqlite3.connect(DB_FILE)
+                        cursor = conn.cursor()
+                        cursor.execute("DELETE FROM items WHERE lab_code = ?", (lab_code,))
+                        conn.commit()
+                        conn.close()
+                        del admin_states[user_id]
+                        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"✅ ลบข้อมูลรายการ {lab_code} สำเร็จแล้ว!"))
+                    except Exception as e:
+                        del admin_states[user_id]
+                        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"❌ เกิดข้อผิดพลาดในการลบข้อมูล: {e}"))
+                else:
+                    del admin_states[user_id]
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="🚫 ยกเลิกการลบข้อมูลแล้ว"))
+                return
+
+            elif step == 'waiting_delete_confirmation':
+                if user_message.lower() == 'confirm':
+                    try:
+                        item_to_delete = state_info['data']
+                        lab_code = item_to_delete['lab_code']
+
+                        conn = sqlite3.connect(DB_FILE)
+                        cursor = conn.cursor()
+                        cursor.execute("DELETE FROM items WHERE lab_code = ?", (lab_code,))
+                        conn.commit()
+                        conn.close()
+                        del admin_states[user_id]
+                        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"✅ ลบข้อมูลรายการ {lab_code} สำเร็จแล้ว!"))
+                    except Exception as e:
+                        del admin_states[user_id]
+                        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"❌ เกิดข้อผิดพลาดในการลบข้อมูล: {e}"))
+                else:
+                    del admin_states[user_id]
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="🚫 ยกเลิกการลบข้อมูลแล้ว))
+                return
+
+            elif step == 'waiting_new_value':
+                field_to_edit = state_info['data']['field_to_edit']
+                new_value = user_message.strip()
+
+                # Type conversion for specific fields
+                if field_to_edit == 'rate_baht':
+                    try:
+                        new_value = float(new_value)
+                    except ValueError:
+                        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ รูปแบบอัตราไม่ถูกต้อง! กรุณาป้อนเป็นตัวเลขเท่านั้น (เช่น 150 หรือ 80.50)"))
+                        return
+                elif field_to_edit == 'reimbursable':
+                    new_value = new_value.lower() in ['yes', 'y', 'true', 'ใช่']
+
+                state_info['data']['new_value'] = new_value
+                state_info['step'] = 'waiting_edit_confirmation'
+
+                # Prepare confirmation message
+                original_item = state_info['data']
+                confirmation_msg = f"คุณต้องการแก้ไขข้อมูลนี้ใช่หรือไม่?\n"
+                confirmation_msg += f"รหัส: {original_item['lab_code']}\n"
+                confirmation_msg += f"ฟิลด์: {field_to_edit}\n"
+                confirmation_msg += f"ค่าเดิม: {original_item[field_to_edit]}\n"
+                confirmation_msg += f"ค่าใหม่: {new_value}\n\n"
+                confirmation_msg += "พิมพ์ `confirm` เพื่อยืนยัน หรือ `cancel` เพื่อยกเลิก"
+
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=confirmation_msg))
+                return
+
         # Fallback to prevent sending to user query handling
         return
 
@@ -395,6 +609,43 @@ def handle_message(event):
                 event.reply_token,
                 TextSendMessage(text="➡️ เริ่มขั้นตอนการเพิ่มข้อมูล\nกรุณาป้อนรหัสรายการ (Lab Code) ที่ไม่ซ้ำกับของเดิม:")
             )
+            return
+
+        # --- Start Edit Item Flow ---
+        if user_message_lower == "admin_edit_start":
+            admin_states[user_id] = {'state': 'editing_item', 'step': 'waiting_edit_lab_code', 'data': {}}
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text="➡️ เริ่มขั้นตอนการแก้ไขข้อมูล\nกรุณาป้อนรหัสรายการ (Lab Code) ของรายการที่ต้องการแก้ไข:")
+            )
+            return
+
+        # --- Start Delete Item Flow ---
+        if user_message_lower == "admin_delete_start":
+            admin_states[user_id] = {'state': 'deleting_item', 'step': 'waiting_delete_lab_code', 'data': {}}
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text="➡️ เริ่มขั้นตอนการลบข้อมูล\nกรุณาป้อนรหัสรายการ (Lab Code) ของรายการที่ต้องการลบ:")
+            )
+            return
+
+        # --- List All Items Flow ---
+        if user_message_lower == "admin_list_all":
+            all_items = get_all_items_from_db()
+            if all_items:
+                list_msg = "📋 รายการทั้งหมดในฐานข้อมูล:\n\n"
+                for item in all_items:
+                    list_msg += f"รหัส: {item['lab_code']}\n"
+                    list_msg += f"ชื่อ: {item['name_th']} ({item['name_en']})\n"
+                    list_msg += f"อัตรา: {item['rate_baht']:.2f} บาท\n"
+                    list_msg += f"เบิกได้: {'ใช่' if item['reimbursable'] else 'ไม่'}\n"
+                    list_msg += f"สิทธิ: {item['rights']}\n"
+                    if item['notes']:
+                        list_msg += f"หมายเหตุ: {item['notes']}\n"
+                    list_msg += "--------------------\n"
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=list_msg))
+            else:
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ไม่พบข้อมูลในฐานข้อมูล"))
             return
 
     
