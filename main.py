@@ -340,8 +340,7 @@ def handle_message(event):
                 # TODO: Check for duplicate lab_code
                 state_info['data']['lab_code'] = user_message
                 state_info['step'] = 'waiting_name_th'
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ รหัส: " + user_message + "
-ต่อไป ป้อนชื่อบริการ (ภาษาไทย):"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✔️ รหัส: " + user_message + "\nต่อไป ป้อนชื่อบริการ (ภาษาไทย):"))
                 return
 
             elif step == 'waiting_name_th':
