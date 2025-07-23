@@ -148,7 +148,7 @@
     *   สร้างไฟล์ `main.py`, `templates/index.html`, `requirements.txt`, `Procfile`, `.python-version`
 
 *   **ฐานความรู้ภายใน (Knowledge Base):**
-    *   มีฐานข้อมูลเริ่มต้น 3 รายการ (Urinalysis, CBC, HbA1c)
+    *   มีฐานข้อมูลเริ่มต้น 6 รายการ (Urinalysis, CBC, HbA1c, Glucose, Cholesterol, Uric Acid)
     *   สามารถค้นหาข้อมูลได้
 
 *   **การเชื่อมโยงกับเว็บเป้าหมาย:**

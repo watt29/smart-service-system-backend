@@ -75,6 +75,45 @@ def populate_initial_data():
             "icd10_code": "E11.9",
             "icd10_desc": "เบาหวานชนิดที่ 2",
             "notes": "ตรวจได้ 2 ครั้ง/ปี"
+        },
+        {
+            "lab_code": "30201",
+            "name_th": "การตรวจระดับน้ำตาลในเลือด",
+            "name_en": "Glucose",
+            "rate_baht": 50.00,
+            "reimbursable": True,
+            "rights": "ทุกสิทธิ",
+            "cgd_code": "MED0302010",
+            "cpt_code": "82947",
+            "icd10_code": "R73.0",
+            "icd10_desc": "ภาวะน้ำตาลในเลือดสูง",
+            "notes": "อดอาหาร 8-12 ชม."
+        },
+        {
+            "lab_code": "30301",
+            "name_th": "การตรวจระดับคอเลสเตอรอล",
+            "name_en": "Cholesterol",
+            "rate_baht": 60.00,
+            "reimbursable": True,
+            "rights": "ทุกสิทธิ",
+            "cgd_code": "MED0303010",
+            "cpt_code": "82465",
+            "icd10_code": "E78.0",
+            "icd10_desc": "ภาวะไขมันในเลือดสูง",
+            "notes": "อดอาหาร 9-12 ชม."
+        },
+        {
+            "lab_code": "30401",
+            "name_th": "การตรวจกรดยูริกในเลือด",
+            "name_en": "Uric Acid",
+            "rate_baht": 70.00,
+            "reimbursable": True,
+            "rights": "ทุกสิทธิ",
+            "cgd_code": "MED0304010",
+            "cpt_code": "84550",
+            "icd10_code": "M10.9",
+            "icd10_desc": "โรคเกาต์ไม่ระบุรายละเอียด",
+            "notes": "ไม่ต้องอดอาหาร"
         }
     ]
 
