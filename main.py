@@ -2,11 +2,15 @@ import urllib.parse
 import os
 import sqlite3
 from flask import Flask, request, abort
-from linebot.v3.webhook import WebhookHandler
-
-from linebot.exceptions import InvalidSignatureError
-from linebot.v3.webhooks import MessageEvent
-from linebot.v3.messaging import TextMessage, TextSendMessage, QuickReply, QuickReplyButton, MessageAction
+from linebot import (
+    LineBotApi, WebhookHandler
+)
+from linebot.exceptions import (
+    InvalidSignatureError
+)
+from linebot.models import (
+    MessageEvent, TextMessage, TextSendMessage, QuickReply, QuickReplyButton, MessageAction
+)
 
 # URL ฐานข้อมูลกรมบัญชีกลาง
 CGD_BASE_URL = "https://mbdb.cgd.go.th/wel/searchmed.jsp"
@@ -271,8 +275,7 @@ if not ADMIN_USER_ID:
     print("Error: ADMIN_USER_ID environment variable not set.")
     print("Admin features will not be available. Please set it in Heroku Config Vars.")
 
-configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
-line_bot_api = MessagingApi(ApiClient(configuration))
+line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 # สร้าง Quick Reply Buttons จากข้อมูลในฐานข้อมูล
