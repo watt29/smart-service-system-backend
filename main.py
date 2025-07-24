@@ -5,8 +5,7 @@ from flask import Flask, request, abort
 from linebot.v3.webhook import WebhookHandler
 
 from linebot.exceptions import InvalidSignatureError
-from linebot.v3.webhooks import MessageEvent, TextMessage
-from linebot.v3.messaging import TextSendMessage, QuickReply, QuickReplyButton, MessageAction
+from linebot.v3.messaging import MessageEvent, TextMessage, TextSendMessage, QuickReply, QuickReplyButton, MessageAction
 
 # URL ฐานข้อมูลกรมบัญชีกลาง
 CGD_BASE_URL = "https://mbdb.cgd.go.th/wel/searchmed.jsp"
