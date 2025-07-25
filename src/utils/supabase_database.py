@@ -160,19 +160,34 @@ class SupabaseDatabase:
             
             # เรียงลำดับ
             sort_column = order_by
+            desc_order = True
+            
             if order_by == 'popularity':
                 sort_column = 'sold_count'
             elif order_by == 'price_low':
                 sort_column = 'price'
+                desc_order = False
             elif order_by == 'price_high':
                 sort_column = 'price'
-                query_builder = query_builder.order(sort_column, desc=True)
+                desc_order = True
             elif order_by == 'rating':
                 sort_column = 'rating'
-                query_builder = query_builder.order(sort_column, desc=True)
+                desc_order = True
+            elif order_by == 'category':
+                sort_column = 'category'
+                desc_order = False
+                # เรียงตามหมวดหมู่ แล้วตามยอดขาย
+                query_builder = query_builder.order('category', desc=False).order('sold_count', desc=True)
+            elif order_by == 'product_name':
+                sort_column = 'product_name'
+                desc_order = False
+            else:  # created_at และอื่นๆ
+                sort_column = 'created_at'
+                desc_order = True
             
-            if order_by not in ['price_high', 'rating']:
-                query_builder = query_builder.order(sort_column, desc=True)
+            # ใช้การเรียงลำดับ (ยกเว้น category ที่เรียงแล้ว)
+            if order_by != 'category':
+                query_builder = query_builder.order(sort_column, desc=desc_order)
             
             # เพิ่ม pagination
             query_builder = query_builder.range(offset, offset + limit - 1)
@@ -350,6 +365,79 @@ class SupabaseDatabase:
             
         except Exception as e:
             self.logger.error(f"Error getting categories: {e}")
+            return []
+    
+    def get_categories_with_stats(self) -> List[Dict[str, Any]]:
+        """ดึงหมวดหมู่พร้อมสถิติความนิยม สำหรับ Smart grouping"""
+        if not self.connected:
+            return []
+        
+        try:
+            response = self.client.table('products')\
+                .select('category, price, sold_count, rating')\
+                .execute()
+            
+            # คำนวณสถิติแต่ละหมวดหมู่
+            category_stats = {}
+            
+            for item in response.data or []:
+                category = item.get('category', 'อื่นๆ')
+                if not category:
+                    category = 'อื่นๆ'
+                
+                if category not in category_stats:
+                    category_stats[category] = {
+                        'name': category,
+                        'product_count': 0,
+                        'total_sold': 0,
+                        'avg_price': 0,
+                        'avg_rating': 0,
+                        'popularity_score': 0,
+                        'prices': [],
+                        'ratings': []
+                    }
+                
+                stats = category_stats[category]
+                stats['product_count'] += 1
+                stats['total_sold'] += int(item.get('sold_count', 0))
+                stats['prices'].append(float(item.get('price', 0)))
+                
+                rating = float(item.get('rating', 0))
+                if rating > 0:
+                    stats['ratings'].append(rating)
+            
+            # คำนวณค่าเฉลี่ยและคะแนนความนิยม
+            categories_with_stats = []
+            for category, stats in category_stats.items():
+                # คำนวณราคาเฉลี่ย
+                if stats['prices']:
+                    stats['avg_price'] = sum(stats['prices']) / len(stats['prices'])
+                
+                # คำนวณคะแนนเฉลี่ย
+                if stats['ratings']:
+                    stats['avg_rating'] = sum(stats['ratings']) / len(stats['ratings'])
+                
+                # คำนวณคะแนนความนิยม (น้อมหนัก: จำนวนสินค้า 40%, ยอดขาย 40%, คะแนน 20%)
+                popularity_score = (
+                    (stats['product_count'] * 0.4) +
+                    (min(stats['total_sold'] / 100, 100) * 0.4) +  # normalize ยอดขายต่อ 100
+                    (stats['avg_rating'] * 20 * 0.2)  # normalize คะแนนต่อ 100
+                )
+                stats['popularity_score'] = round(popularity_score, 2)
+                
+                # ลบ arrays ที่ไม่ต้องการ
+                del stats['prices']
+                del stats['ratings']
+                
+                categories_with_stats.append(stats)
+            
+            # เรียงตามคะแนนความนิยม
+            categories_with_stats.sort(key=lambda x: x['popularity_score'], reverse=True)
+            
+            return categories_with_stats
+            
+        except Exception as e:
+            self.logger.error(f"Error getting categories with stats: {e}")
             return []
     
     def get_price_range(self) -> Dict[str, float]:

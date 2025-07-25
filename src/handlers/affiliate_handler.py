@@ -115,6 +115,15 @@ class AffiliateLineHandler:
                 self._show_categories(event)
                 return
             
+            if text.lower() in ["สถิติหมวดหมู่", "category-stats"] and user_id == config.ADMIN_USER_ID:
+                self._show_category_stats(event)
+                return
+            
+            if text.lower().startswith("หมวด "):
+                category_name = text[5:].strip()
+                self._browse_category(event, category_name, user_id)
+                return
+            
             # ค้นหาสินค้าปกติ
             self._handle_product_search(event, text, user_id)
             
@@ -334,7 +343,9 @@ class AffiliateLineHandler:
                 "ราคาถูก": "price_low", 
                 "ราคาแพง": "price_high",
                 "ขายดี": "popularity",
-                "คะแนน": "rating"
+                "คะแนน": "rating",
+                "หมวดหมู่": "category",
+                "ชื่อ": "product_name"
             }
             
             order_by = order_by_map.get(sort_option, "created_at")
@@ -343,7 +354,7 @@ class AffiliateLineHandler:
             
         except Exception as e:
             print(f"[ERROR] Invalid sort command: {sort_text}, error: {e}")
-            self._reply_text(event, "❌ คำสั่งเรียงไม่ถูกต้อง\n💡 ตัวอย่าง: 'เรียง แมว ราคาถูก' (ใหม่/ราคาถูก/ราคาแพง/ขายดี/คะแนน)")
+            self._reply_text(event, "❌ คำสั่งเรียงไม่ถูกต้อง\n💡 ตัวอย่าง: 'เรียง แมว ราคาถูก' (ใหม่/ราคาถูก/ราคาแพง/ขายดี/คะแนน/หมวดหมู่/ชื่อ)")
     
     def _handle_product_search(self, event, query: str, user_id: str = None, 
                              page: int = 1, category: str = None, 
@@ -973,35 +984,275 @@ class AffiliateLineHandler:
         self._reply_text(event, stats_text)
     
     def _show_categories(self, event):
-        """แสดงหมวดหมู่สินค้าและตัวเลือกการกรอง"""
+        """แสดงหมวดหมู่สินค้าด้วย Smart Category Grouping และ Quick Reply buttons"""
         try:
-            # ดึงหมวดหมู่จริงจากฐานข้อมูล
-            categories = self.db.get_categories()
+            # ดึงหมวดหมู่พร้อมสถิติความนิยม
+            categories_with_stats = self.db.get_categories_with_stats()
             price_range = self.db.get_price_range()
             
-            if not categories:
-                categories = ["อิเล็กทรอนิกส์", "แฟชั่น", "ความงาม", "สุขภาพ", "บ้านและสวน", "กีฬา", "หนังสือ", "เด็กและของเล่น", "อาหาร", "อื่นๆ"]
+            if not categories_with_stats:
+                # Fallback หากไม่มีข้อมูล
+                categories = ["อิเล็กทรอนิกส์", "แฟชั่น", "ความงาม", "สุขภาพ", "บ้านและสวน", "กีฬา", "หนังสือ", "เด็กและของเล่น", "อาหาร", "สัตว์เลี้ยง"]
+                categories_with_stats = [{'name': cat, 'product_count': 0, 'popularity_score': 0} for cat in categories]
             
-            categories_text = "📂 หมวดหมู่สินค้า:\n\n"
-            categories_text += "\n".join([f"• {cat}" for cat in categories[:15]])  # แสดงแค่ 15 หมวดหมู่แรก
+            # จัดกลุ่มหมวดหมู่ตามความนิยม
+            hot_categories = []  # คะแนน >= 50
+            popular_categories = []  # คะแนน 20-49
+            normal_categories = []  # คะแนน < 20
             
-            if len(categories) > 15:
-                categories_text += f"\n... และอีก {len(categories) - 15} หมวดหมู่"
+            for cat in categories_with_stats:
+                if cat['popularity_score'] >= 50:
+                    hot_categories.append(cat)
+                elif cat['popularity_score'] >= 20:
+                    popular_categories.append(cat)
+                else:
+                    normal_categories.append(cat)
             
-            categories_text += f"\n\n💰 ช่วงราคา: {price_range['min_price']:,.0f} - {price_range['max_price']:,.0f} บาท"
+            # สร้าง Quick Reply buttons แบบ Smart grouping
+            quick_reply_items = []
             
-            categories_text += "\n\n🎯 วิธีใช้ตัวกรอง:\n"
-            categories_text += "• พิมพ์ชื่อหมวดหมู่ เช่น 'สัตว์เลี้ยง'\n"
-            categories_text += "• กรอง แมว หมวดหมู่:สัตว์เลี้ยง\n"
-            categories_text += "• กรอง ครีม ราคา:50-200\n"
-            categories_text += "• เรียง โทรศัพท์ ราคาถูก\n"
-            categories_text += "• เรียง กระเป๋า ขายดี"
+            # หมวดหมู่ฮิต (ใส่ emoji พิเศษ)
+            for cat in hot_categories[:4]:  # จำกัด 4 หมวดหมู่ฮิต
+                emoji = "🔥" if cat['popularity_score'] >= 80 else "⭐"
+                quick_reply_items.append(
+                    QuickReplyItem(action=MessageAction(
+                        label=f"{emoji} {cat['name']}", 
+                        text=f"หมวด {cat['name']}"
+                    ))
+                )
             
-            self._reply_text(event, categories_text)
+            # หมวดหมู่ยอดนิยม
+            for cat in popular_categories[:4]:  # จำกัด 4 หมวดหมู่
+                quick_reply_items.append(
+                    QuickReplyItem(action=MessageAction(
+                        label=f"📂 {cat['name']}", 
+                        text=f"หมวด {cat['name']}"
+                    ))
+                )
+            
+            # หมวดหมู่ปกติ (เติมเต็มให้ครบ)
+            remaining_slots = 10 - len(quick_reply_items)
+            for cat in normal_categories[:remaining_slots]:
+                quick_reply_items.append(
+                    QuickReplyItem(action=MessageAction(
+                        label=f"📁 {cat['name']}", 
+                        text=f"หมวด {cat['name']}"
+                    ))
+                )
+            
+            # เพิ่มปุ่มพิเศษ
+            quick_reply_items.extend([
+                QuickReplyItem(action=MessageAction(label="🔥 ขายดีทั้งหมด", text="เรียง ทั้งหมด ขายดี")),
+                QuickReplyItem(action=MessageAction(label="💰 ราคาดี", text="เรียง ทั้งหมด ราคาถูก")),
+                QuickReplyItem(action=MessageAction(label="⭐ คะแนนสูง", text="เรียง ทั้งหมด คะแนน"))
+            ])
+            
+            quick_replies = QuickReply(items=quick_reply_items)
+            
+            # สร้างข้อความแสดงผล
+            categories_text = "🎯 หมวดหมู่สินค้า (เรียงตามความนิยม):\n\n"
+            
+            # แสดงหมวดหมู่ฮิต
+            if hot_categories:
+                categories_text += "🔥 **หมวดหมู่ฮิต**:\n"
+                for cat in hot_categories[:5]:
+                    categories_text += f"• {cat['name']} ({cat['product_count']} รายการ, คะแนน {cat['popularity_score']})\n"
+                categories_text += "\n"
+            
+            # แสดงหมวดหมู่ยอดนิยม
+            if popular_categories:
+                categories_text += "⭐ **หมวดหมู่ยอดนิยม**:\n"
+                for cat in popular_categories[:3]:
+                    categories_text += f"• {cat['name']} ({cat['product_count']} รายการ)\n"
+                categories_text += "\n"
+            
+            categories_text += f"🛍️ รวมทั้งหมด {len(categories_with_stats)} หมวดหมู่\n"
+            categories_text += f"💰 ช่วงราคา: {price_range['min_price']:,.0f} - {price_range['max_price']:,.0f} บาท\n\n"
+            
+            categories_text += "📱 **กดปุ่มด้านล่างเพื่อเลือก** หรือพิมพ์:\n"
+            categories_text += "• หมวด [ชื่อหมวดหมู่] เช่น 'หมวด ความงาม'\n"
+            categories_text += "• เรียง [คำค้น] หมวดหมู่ เช่น 'เรียง แมว หมวดหมู่'"
+            
+            self.line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=categories_text, quick_reply=quick_replies)]
+                )
+            )
             
         except Exception as e:
-            print(f"[ERROR] Error showing categories: {e}")
+            print(f"[ERROR] Error showing smart categories: {e}")
             self._reply_text(event, "❌ เกิดข้อผิดพลาดในการแสดงหมวดหมู่")
+    
+    def _browse_category(self, event, category_name: str, user_id: str):
+        """เรียกดูสินค้าในหมวดหมู่เฉพาะ"""
+        try:
+            print(f"[DEBUG] Browsing category: '{category_name}'")
+            
+            # ค้นหาสินค้าในหมวดหมู่นั้น เรียงตามยอดขาย
+            search_result = self.db.search_products(
+                query="",  # ค้นหาทั้งหมด
+                limit=config.MAX_RESULTS_PER_SEARCH,
+                offset=0,
+                category=category_name,
+                order_by='popularity'  # เรียงตามความนิยม
+            )
+            
+            products = search_result.get('products', [])
+            total = search_result.get('total', 0)
+            has_more = search_result.get('has_more', False)
+            
+            print(f"[DEBUG] Found {len(products)} products in category '{category_name}' (total: {total})")
+            
+            if products:
+                # แสดงผลพร้อม pagination สำหรับหมวดหมู่
+                self._send_category_products(event, products, category_name, 1, total, has_more)
+            else:
+                self._reply_text(event, f"❌ ไม่พบสินค้าในหมวดหมู่ '{category_name}'\n💡 ลองเลือกหมวดหมู่อื่น หรือพิมพ์ 'หมวดหมู่' เพื่อดูทั้งหมด")
+                
+        except Exception as e:
+            print(f"[ERROR] Category browse error: {e}")
+            self._reply_text(event, "❌ เกิดข้อผิดพลาดในการเรียกดูหมวดหมู่")
+    
+    def _send_category_products(self, event, products: List[Dict], category_name: str,
+                              page: int, total: int, has_more: bool):
+        """ส่งรายการสินค้าในหมวดหมู่พร้อม pagination"""
+        
+        # สร้าง Flex Carousel สำหรับสินค้า
+        flex_contents = self._create_products_carousel(products, f"หมวดหมู่: {category_name}")
+        
+        # เพิ่มข้อมูล pagination
+        total_pages = (total + config.MAX_RESULTS_PER_SEARCH - 1) // config.MAX_RESULTS_PER_SEARCH
+        
+        # สร้างปุ่ม pagination สำหรับหมวดหมู่
+        pagination_buttons = []
+        
+        # ปุ่มหน้าก่อนหน้า
+        if page > 1:
+            prev_action = f"หน้า{page-1}::cat:{category_name}:sort:popularity"
+            pagination_buttons.append({
+                "type": "button",
+                "action": {
+                    "type": "message",
+                    "label": "◀️ หน้าก่อน",
+                    "text": prev_action
+                },
+                "style": "secondary",
+                "height": "sm"
+            })
+        
+        # ปุ่มหน้าถัดไป
+        if has_more:
+            next_action = f"หน้า{page+1}::cat:{category_name}:sort:popularity"
+            pagination_buttons.append({
+                "type": "button",
+                "action": {
+                    "type": "message",
+                    "label": "หน้าถัดไป ▶️",
+                    "text": next_action
+                },
+                "style": "secondary",
+                "height": "sm"
+            })
+        
+        # ปุ่มตัวเลือกการเรียง
+        sort_buttons = [
+            {
+                "type": "button",
+                "action": {
+                    "type": "message",
+                    "label": "🔥 ขายดี",
+                    "text": f"เรียง หมวด:{category_name} ขายดี"
+                },
+                "style": "primary",
+                "height": "sm"
+            },
+            {
+                "type": "button", 
+                "action": {
+                    "type": "message",
+                    "label": "💰 ราคาถูก",
+                    "text": f"เรียง หมวด:{category_name} ราคาถูก"
+                },
+                "style": "primary",
+                "height": "sm"
+            }
+        ]
+        
+        # เพิ่ม footer สำหรับ controls
+        if total_pages > 1 or total > 0:
+            footer_contents = [
+                {
+                    "type": "text",
+                    "text": f"📂 {category_name}",
+                    "size": "md",
+                    "align": "center",
+                    "weight": "bold",
+                    "color": "#333333"
+                }
+            ]
+            
+            if total_pages > 1:
+                footer_contents.append({
+                    "type": "text",
+                    "text": f"📄 หน้า {page}/{total_pages} | รวม {total} รายการ",
+                    "size": "xs",
+                    "align": "center",
+                    "color": "#666666",
+                    "margin": "xs"
+                })
+            else:
+                footer_contents.append({
+                    "type": "text", 
+                    "text": f"รวม {total} รายการ",
+                    "size": "xs",
+                    "align": "center",
+                    "color": "#666666",
+                    "margin": "xs"
+                })
+            
+            # รวมปุ่มทั้งหมด
+            all_buttons = []
+            if pagination_buttons:
+                all_buttons.extend(pagination_buttons)
+            if len(all_buttons) < 4:  # เพิ่มปุ่มเรียงถ้ามีที่ว่าง
+                all_buttons.extend(sort_buttons[:4-len(all_buttons)])
+                
+            flex_contents["contents"].append({
+                "type": "bubble",
+                "size": "nano",
+                "body": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": footer_contents,
+                    "paddingAll": "12px"
+                },
+                "footer": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "box",
+                            "layout": "horizontal",
+                            "contents": all_buttons,
+                            "spacing": "sm"
+                        }
+                    ],
+                    "paddingAll": "8px"
+                } if all_buttons else None
+            })
+        
+        flex_message = FlexMessage(
+            alt_text=f"📂 {category_name}: {len(products)} รายการ",
+            contents=FlexContainer.from_dict(flex_contents)
+        )
+        
+        self.line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[flex_message]
+            )
+        )
     
     def _show_all_products(self, event, user_id: str):
         """แสดงสินค้าทั้งหมด (สำหรับแอดมิน)"""
@@ -1038,6 +1289,67 @@ class AffiliateLineHandler:
         
         self._reply_text(event, stats_text)
         del self.admin_state[user_id]
+    
+    def _show_category_stats(self, event):
+        """แสดงสถิติหมวดหมู่แบบละเอียด (สำหรับ Admin)"""
+        try:
+            categories_with_stats = self.db.get_categories_with_stats()
+            
+            if not categories_with_stats:
+                self._reply_text(event, "❌ ไม่มีข้อมูลหมวดหมู่")
+                return
+            
+            stats_text = "📊 **สถิติหมวดหมู่แบบละเอียด**:\n\n"
+            
+            # จัดกลุ่มตามความนิยม
+            hot_categories = [cat for cat in categories_with_stats if cat['popularity_score'] >= 50]
+            popular_categories = [cat for cat in categories_with_stats if 20 <= cat['popularity_score'] < 50]
+            normal_categories = [cat for cat in categories_with_stats if cat['popularity_score'] < 20]
+            
+            # แสดงหมวดหมู่ฮิต
+            if hot_categories:
+                stats_text += "🔥 **หมวดหมู่ฮิต** (คะแนน ≥ 50):\n"
+                for i, cat in enumerate(hot_categories[:5], 1):
+                    stats_text += (
+                        f"{i}. **{cat['name']}**\n"
+                        f"   📊 คะแนนความนิยม: {cat['popularity_score']}\n"
+                        f"   🛍️ จำนวนสินค้า: {cat['product_count']} รายการ\n"
+                        f"   🔥 ยอดขายรวม: {cat['total_sold']:,} ชิ้น\n"
+                        f"   💰 ราคาเฉลี่ย: {cat['avg_price']:,.0f} บาท\n"
+                        f"   ⭐ คะแนนเฉลี่ย: {cat['avg_rating']:.1f}/5.0\n\n"
+                    )
+            
+            # แสดงหมวดหมู่ยอดนิยม
+            if popular_categories:
+                stats_text += "⭐ **หมวดหมู่ยอดนิยม** (คะแนน 20-49):\n"
+                for i, cat in enumerate(popular_categories[:3], 1):
+                    stats_text += (
+                        f"{i}. **{cat['name']}**\n"
+                        f"   📊 คะแนน: {cat['popularity_score']} | "
+                        f"🛍️ {cat['product_count']} รายการ | "
+                        f"🔥 {cat['total_sold']:,} ชิ้น\n"
+                        f"   💰 {cat['avg_price']:,.0f}฿ | "
+                        f"⭐ {cat['avg_rating']:.1f}/5.0\n\n"
+                    )
+            
+            # แสดงสรุป
+            total_products = sum(cat['product_count'] for cat in categories_with_stats)
+            total_sold = sum(cat['total_sold'] for cat in categories_with_stats)
+            
+            stats_text += f"📈 **สรุปภาพรวม**:\n"
+            stats_text += f"• รวมทั้งหมด: {len(categories_with_stats)} หมวดหมู่\n"
+            stats_text += f"• หมวดหมู่ฮิต: {len(hot_categories)} หมวด\n"
+            stats_text += f"• หมวดหมู่ยอดนิยม: {len(popular_categories)} หมวด\n"
+            stats_text += f"• สินค้าทั้งหมด: {total_products:,} รายการ\n"
+            stats_text += f"• ยอดขายรวม: {total_sold:,} ชิ้น\n\n"
+            
+            stats_text += "💡 **เคล็ดลับ**: หมวดหมู่ฮิตได้รับการแสดงเป็นลำดับแรกใน Quick Reply buttons"
+            
+            self._reply_text(event, stats_text)
+            
+        except Exception as e:
+            print(f"[ERROR] Error showing category stats: {e}")
+            self._reply_text(event, "❌ เกิดข้อผิดพลาดในการแสดงสถิติหมวดหมู่")
     
     def _reply_text(self, event, text: str):
         """ส่งข้อความตอบกลับ"""
