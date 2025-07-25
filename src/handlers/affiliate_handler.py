@@ -20,6 +20,7 @@ from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
 from ..config import config
 from ..utils.supabase_database import SupabaseDatabase
+from ..utils.promotion_generator import PromotionGenerator
 
 class AffiliateLineHandler:
     """คลาสสำหรับจัดการ LINE Bot messages สำหรับ Affiliate Products"""
@@ -27,6 +28,7 @@ class AffiliateLineHandler:
     def __init__(self):
         self.admin_state = {}  # เก็บสถานะของแต่ละ user
         self.db = SupabaseDatabase()
+        self.promo_generator = PromotionGenerator()
         
         # ตั้งค่า LINE Bot API
         if config.LINE_CHANNEL_ACCESS_TOKEN and config.LINE_CHANNEL_SECRET:
@@ -84,6 +86,11 @@ class AffiliateLineHandler:
             if text.lower().startswith("รหัส "):
                 product_code = text[4:].strip()
                 self._handle_product_code_search(event, product_code)
+                return
+            
+            if text.lower().startswith("โปรโมต "):
+                product_code = text[7:].strip()
+                self._handle_promotion_generation(event, product_code)
                 return
             
             if text.lower() in ["สถิติ", "stats"]:
@@ -276,6 +283,26 @@ class AffiliateLineHandler:
         else:
             self._reply_text(event, f"❌ ไม่พบสินค้ารหัส '{product_code}'\n💡 ลองค้นหาด้วยชื่อสินค้าแทน")
     
+    def _handle_promotion_generation(self, event, product_code: str):
+        """สร้างคำโปรโมตสินค้าอัตโนมัติ"""
+        print(f"[DEBUG] Generating promotion for product code: '{product_code}'")
+        product = self.db.get_product_by_code(product_code.upper())
+        
+        if product:
+            # สร้างโปรโมต 3 แบบ
+            promotions = self.promo_generator.generate_multiple_promotions(product, 3)
+            
+            response = "🎯 คำโปรโมตอัตโนมัติ 3 แบบ:\n\n"
+            
+            for i, promo in enumerate(promotions, 1):
+                response += f"📝 แบบที่ {i}:\n{promo}\n\n" + "="*30 + "\n\n"
+            
+            response += "💡 Copy ไปใช้ได้เลย! แก้ไขตามใจชอบนะคะ"
+            
+            self._reply_text(event, response)
+        else:
+            self._reply_text(event, f"❌ ไม่พบสินค้ารหัส '{product_code}'\n💡 ลองใช้คำสั่ง 'รหัส {product_code}' เพื่อดูสินค้าก่อน")
+    
     def _send_product_flex(self, event, product: Dict):
         """ส่ง Flex Message แสดงรายละเอียดสินค้า"""
         commission_amount = product.get('commission_amount', 0)
@@ -425,7 +452,7 @@ class AffiliateLineHandler:
                 f"   🏪 {product['shop_name']}\n\n"
             )
         
-        products_text += "💡 พิมพ์ 'รหัส [รหัสสินค้า]' เพื่อดูลิงก์ Affiliate\nหรือค้นหาด้วยชื่อสินค้าที่เจาะจงมากขึ้น"
+        products_text += "💡 คำสั่งที่ใช้ได้:\n• 'รหัส [รหัสสินค้า]' - ดูลิงก์ Affiliate\n• 'โปรโมต [รหัสสินค้า]' - สร้างคำโปรโมต\nหรือค้นหาด้วยชื่อสินค้าที่เจาะจงมากขึ้น"
         
         self._reply_text(event, products_text)
     
@@ -436,7 +463,8 @@ class AffiliateLineHandler:
             f"💡 ลองค้นหาด้วย:\n"
             f"• ชื่อสินค้า เช่น 'iPhone', 'MacBook'\n"
             f"• หมวดหมู่ เช่น 'อิเล็กทรอนิกส์', 'ความงาม'\n" 
-            f"• รหัสสินค้า เช่น 'รหัส PHONE001'\n\n"
+            f"• รหัสสินค้า เช่น 'รหัส PHONE001'\n"
+            f"• สร้างโปรโมต เช่น 'โปรโมต PHONE001'\n\n"
             f"พิมพ์ 'หมวดหมู่' เพื่อดูหมวดหมู่สินค้าทั้งหมด"
         )
         self._reply_text(event, message)
