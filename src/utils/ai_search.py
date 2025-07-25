@@ -1,70 +1,99 @@
 """
-AI-Enhanced Search สำหรับ Smart Service System
-ปรับปรุงการค้นหาด้วยเทคนิค AI
+📁 src/utils/ai_search.py
+🎯 AI-Enhanced Search สำหรับ Affiliate Product Review Bot
+ปรับปรุงการค้นหาสินค้าด้วยเทคนิค AI
 """
 
 import re
-from typing import List, Dict, Tuple
+import logging
+from typing import List, Dict, Tuple, Optional
 from difflib import SequenceMatcher
-from .logger import system_logger, performance_monitor
+
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+
+from ..config import config
 
 class AISearchEngine:
-    """คลาสสำหรับการค้นหาแบบ AI"""
+    """คลาสสำหรับการค้นหาสินค้าแบบ AI"""
     
     def __init__(self):
-        # คำพ้องความหมายสำหรับการแพทย์ไทย
+        self.logger = logging.getLogger(__name__)
+        self.client = None
+        
+        # คำพ้องความหมายสำหรับสินค้า
         self.synonyms = {
-            'เลือด': ['blood', 'cbc', 'เม็ดเลือด', 'ตรวจเลือด'],
-            'น้ำตาล': ['glucose', 'sugar', 'เบาหวาน', 'ดัชนี'],
-            'ปัสสาวะ': ['urine', 'น้ำปัสสาวะ', 'ปัสสาวะ', 'urinalysis'],
-            'ไขมัน': ['cholesterol', 'lipid', 'คอเลสเตอรอล'],
-            'ฟัน': ['dental', 'ขูด', 'หินปูน', 'ทันตกรรม'],
-            'กรด': ['acid', 'uric', 'ยูริก'],
-            'โปรตีน': ['protein', 'albumin', 'อัลบูมิน'],
-            'ตรวจ': ['test', 'examination', 'check', 'lab'],
-            'ค่า': ['rate', 'cost', 'price', 'fee', 'บาท']
+            'โทรศัพท์': ['phone', 'มือถือ', 'smartphone', 'iphone', 'android'],
+            'คอมพิวเตอร์': ['computer', 'pc', 'laptop', 'แล็ปท็อป', 'macbook'],
+            'เสื้อผ้า': ['fashion', 'แฟชั่น', 'เสื้อ', 'กางเกง', 'ชุด'],
+            'ความงาม': ['beauty', 'cosmetic', 'เครื่องสำอาง', 'ครีม', 'ลิปสติก'],
+            'สุขภาพ': ['health', 'อาหารเสริม', 'วิตามิน', 'ยา', 'supple'],
+            'รองเท้า': ['shoes', 'sneaker', 'รองเท้าผ้าใบ', 'รองเท้าแฟชั่น'],
+            'กระเป๋า': ['bag', 'handbag', 'backpack', 'เป้', 'clutch'],
+            'นาฬิกา': ['watch', 'clock', 'smartwatch', 'apple watch'],
+            'หูฟัง': ['headphone', 'earphone', 'airpods', 'wireless'],
+            'อาหาร': ['food', 'snack', 'ขนม', 'อาหารเสริม']
         }
         
-        # คำย่อและรูปแบบต่างๆ
-        self.abbreviations = {
-            'cbc': ['complete blood count', 'ตรวจความสมบูรณ์ของเม็ดเลือด'],
-            'hba1c': ['glycated hemoglobin', 'น้ำตาลสะสม', 'เฮโมโกลบิน'],
-            'fbs': ['fasting blood sugar', 'น้ำตาลในเลือด'],
-            'ua': ['uric acid', 'กรดยูริก'],
+        # แบรนด์ที่รู้จัก
+        self.brands = {
+            'apple': ['iphone', 'ipad', 'macbook', 'apple watch', 'airpods'],
+            'samsung': ['galaxy', 'note', 'samsung'],
+            'nike': ['nike', 'air', 'jordan'],
+            'adidas': ['adidas', 'three stripes'],
+            'uniqlo': ['uniqlo', 'ยูนิโคล่']
         }
         
-        # รูปแบบรหัสต่างๆ
-        self.code_patterns = {
-            'medical_code': r'\d{5}',  # รหัส 5 หลัก เช่น 31001
-            'cpt_code': r'[A-Z]?\d{4,5}',  # รหัส CPT
-            'icd_code': r'[A-Z]\d{2}\.?\d?'  # รหัส ICD-10
+        # หมวดหมู่และคำเกี่ยวข้อง
+        self.categories = {
+            'อิเล็กทรอนิกส์': ['electronics', 'gadget', 'tech', 'device'],
+            'แฟชั่น': ['fashion', 'style', 'clothing', 'wear'],
+            'ความงาม': ['beauty', 'cosmetic', 'skincare', 'makeup'],
+            'สุขภาพ': ['health', 'wellness', 'supplement', 'vitamin'],
+            'บ้านและสวน': ['home', 'garden', 'furniture', 'decoration'],
+            'กีฬา': ['sport', 'fitness', 'exercise', 'gym'],
+            'หนังสือ': ['book', 'ebook', 'novel', 'education'],
+            'เด็กและของเล่น': ['kids', 'toys', 'children', 'baby'],
+            'อาหาร': ['food', 'snack', 'beverage', 'organic']
         }
+        
+        # ตั้งค่า OpenAI client
+        if OPENAI_AVAILABLE and config.OPENAI_API_KEY:
+            try:
+                openai.api_key = config.OPENAI_API_KEY
+                self.client = openai
+                self.logger.info("OpenAI client initialized successfully")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize OpenAI client: {e}")
+        else:
+            self.logger.warning("OpenAI not available - using fallback search")
     
-    def enhanced_search(self, query: str, items: List[Dict], limit: int = 10) -> List[Tuple[float, str, Dict]]:
-        """การค้นหาแบบ AI ที่ปรับปรุง"""
-        performance_monitor.start_timer("ai_enhanced_search")
-        
-        query_processed = self._preprocess_query(query)
-        results = []
-        
-        for item in items:
-            if isinstance(item, tuple):
-                key, data = item
-            else:
-                key = item.get('key', '')
-                data = item
+    def enhanced_product_search(self, query: str, products: List[Dict], limit: int = 10) -> List[Dict]:
+        """การค้นหาสินค้าแบบ AI ที่ปรับปรุง"""
+        try:
+            self.logger.debug(f"AI enhanced search for: '{query}'")
             
-            score = self._calculate_relevance_score(query_processed, key, data)
-            if score > 0:
-                results.append((score, key, data))
-        
-        # เรียงตามคะแนนจากมากไปน้อย
-        results.sort(key=lambda x: x[0], reverse=True)
-        
-        performance_monitor.end_timer("ai_enhanced_search")
-        system_logger.debug(f"AI search for '{query}' found {len(results)} results")
-        
-        return results[:limit]
+            query_processed = self._preprocess_query(query)
+            scored_products = []
+            
+            for product in products:
+                score = self._calculate_product_relevance_score(query_processed, product)
+                if score > 0:
+                    scored_products.append((score, product))
+            
+            # เรียงตามคะแนนจากมากไปน้อย
+            scored_products.sort(key=lambda x: x[0], reverse=True)
+            
+            self.logger.debug(f"AI search found {len(scored_products)} relevant products")
+            
+            return [product for score, product in scored_products[:limit]]
+            
+        except Exception as e:
+            self.logger.error(f"Enhanced search failed: {e}")
+            return products[:limit]  # Fallback to original list
     
     def _preprocess_query(self, query: str) -> Dict:
         """ประมวลผลคำค้นหาเบื้องต้น"""
@@ -77,96 +106,189 @@ class AISearchEngine:
             if thai_word in query_lower:
                 expanded_terms.extend(synonyms)
         
-        # ตรวจสอบคำย่อ
-        if query_lower in self.abbreviations:
-            expanded_terms.extend(self.abbreviations[query_lower])
+        # ตรวจสอบแบรนด์
+        detected_brands = []
+        for brand, keywords in self.brands.items():
+            for keyword in keywords:
+                if keyword.lower() in query_lower:
+                    detected_brands.append(brand)
+                    expanded_terms.extend(keywords)
+                    break
+        
+        # ตรวจสอบหมวดหมู่
+        detected_categories = []
+        for category, keywords in self.categories.items():
+            if category in query_lower:
+                detected_categories.append(category)
+                expanded_terms.extend(keywords)
+            else:
+                for keyword in keywords:
+                    if keyword.lower() in query_lower:
+                        detected_categories.append(category)
+                        expanded_terms.extend([category])
+                        break
         
         # แยกคำด้วยช่องว่าง
         words = query_lower.split()
         
+        # ตรวจสอบช่วงราคา
+        price_range = self._extract_price_range(query_lower)
+        
         return {
             'original': query_lower,
-            'expanded_terms': expanded_terms,
+            'expanded_terms': list(set(expanded_terms)),  # ลบคำซ้ำ
             'words': words,
+            'brands': detected_brands,
+            'categories': detected_categories,
+            'price_range': price_range,
             'has_numbers': bool(re.search(r'\d', query_lower))
         }
     
-    def _calculate_relevance_score(self, query_info: Dict, key: str, data: Dict) -> float:
-        """คำนวณคะแนนความเกี่ยวข้อง"""
+    def _extract_price_range(self, query: str) -> Optional[Dict]:
+        """แยกช่วงราคาจากคำค้นหา"""
+        # รูปแบบต่างๆ ของการระบุราคา
+        patterns = [
+            (r'ราคา.*?(\d+).*?(\d+)', 'range'),
+            (r'ไม่เกิน.*?(\d+)', 'max'),
+            (r'มากกว่า.*?(\d+)', 'min'),
+            (r'ประมาณ.*?(\d+)', 'around'),
+            (r'(\d+).*?บาท', 'around')
+        ]
+        
+        for pattern, price_type in patterns:
+            match = re.search(pattern, query)
+            if match:
+                if price_type == 'range':
+                    return {
+                        'min': int(match.group(1)),
+                        'max': int(match.group(2))
+                    }
+                elif price_type == 'max':
+                    return {'max': int(match.group(1))}
+                elif price_type == 'min':
+                    return {'min': int(match.group(1))}
+                elif price_type == 'around':
+                    price = int(match.group(1))
+                    return {
+                        'min': price * 0.8,
+                        'max': price * 1.2
+                    }
+        
+        return None
+    
+    def _calculate_product_relevance_score(self, query_info: Dict, product: Dict) -> float:
+        """คำนวณคะแนนความเกี่ยวข้องสำหรับสินค้า"""
         score = 0.0
         query_original = query_info['original']
         expanded_terms = query_info['expanded_terms']
         
-        # 1. Exact match ใน key (คะแนนสูงสุด)
-        if query_original == key.lower():
+        # ข้อมูลของสินค้า
+        product_name = product.get('product_name', '').lower()
+        product_code = product.get('product_code', '').lower()
+        description = product.get('description', '').lower()
+        category = product.get('category', '').lower()
+        shop_name = product.get('shop_name', '').lower()
+        
+        # 1. Exact match ในชื่อสินค้า (คะแนนสูงสุด)
+        if query_original == product_name:
             score += 100
-        elif query_original in key.lower():
+        elif query_original in product_name:
             score += 80
         
-        # 2. Fuzzy match ใน key
-        key_similarity = SequenceMatcher(None, query_original, key.lower()).ratio()
-        score += key_similarity * 60
+        # 2. Fuzzy match ในชื่อสินค้า
+        name_similarity = SequenceMatcher(None, query_original, product_name).ratio()
+        score += name_similarity * 70
         
-        # 3. ค้นหาใน name_th
-        name_th = data.get('name_th', '').lower()
-        if query_original in name_th:
-            score += 70
-            
-        name_th_similarity = SequenceMatcher(None, query_original, name_th).ratio()
-        score += name_th_similarity * 50
-        
-        # 4. ค้นหาใน name_en  
-        name_en = data.get('name_en', '').lower()
-        if query_original in name_en:
+        # 3. ค้นหาในรหัสสินค้า
+        if query_original == product_code:
+            score += 90
+        elif query_original in product_code:
             score += 60
-            
-        name_en_similarity = SequenceMatcher(None, query_original, name_en).ratio()
-        score += name_en_similarity * 40
         
-        # 5. ค้นหาใน expanded terms
+        # 4. ค้นหาในคำอธิบาย
+        if query_original in description:
+            score += 50
+        
+        desc_similarity = SequenceMatcher(None, query_original, description).ratio()
+        score += desc_similarity * 30
+        
+        # 5. ค้นหาในหมวดหมู่
+        if query_original in category:
+            score += 70
+        
+        # 6. ค้นหาในชื่อร้าน
+        if query_original in shop_name:
+            score += 40
+        
+        # 7. ค้นหาใน expanded terms
         for term in expanded_terms[1:]:  # ข้าม original term
-            if term in key.lower():
-                score += 50
-            if term in name_th:
+            term_lower = term.lower()
+            if term_lower in product_name:
                 score += 45
-            if term in name_en:
+            if term_lower in description:
+                score += 35
+            if term_lower in category:
                 score += 40
         
-        # 6. ค้นหาในรหัสต่างๆ
-        codes_to_check = ['cgd_code', 'cpt', 'icd10']
-        for code_field in codes_to_check:
-            code_value = data.get(code_field, '').lower()
-            if query_original in code_value:
-                score += 30
+        # 8. Brand matching
+        if query_info['brands']:
+            for brand in query_info['brands']:
+                if brand.lower() in product_name or brand.lower() in description:
+                    score += 60
         
-        # 7. ค้นหาในหมายเหตุ
-        notes = data.get('notes', '').lower()
-        if query_original in notes:
-            score += 20
+        # 9. Category matching
+        if query_info['categories']:
+            for cat in query_info['categories']:
+                if cat.lower() in category:
+                    score += 50
         
-        # 8. Pattern matching สำหรับรหัส
-        if query_info['has_numbers']:
-            for pattern_name, pattern in self.code_patterns.items():
-                if re.match(pattern, query_original):
+        # 10. Price range matching
+        if query_info['price_range']:
+            product_price = product.get('price', 0)
+            price_range = query_info['price_range']
+            
+            if 'min' in price_range and 'max' in price_range:
+                if price_range['min'] <= product_price <= price_range['max']:
+                    score += 30
+            elif 'max' in price_range:
+                if product_price <= price_range['max']:
+                    score += 25
+            elif 'min' in price_range:
+                if product_price >= price_range['min']:
                     score += 25
         
-        # 9. Word-level matching
+        # 11. Word-level matching
         query_words = query_info['words']
         if len(query_words) > 1:
             word_matches = 0
+            total_text = f"{product_name} {description} {category}".lower()
+            
             for word in query_words:
-                if (word in key.lower() or 
-                    word in name_th or 
-                    word in name_en):
+                if word in total_text:
                     word_matches += 1
             
             word_ratio = word_matches / len(query_words)
-            score += word_ratio * 30
+            score += word_ratio * 25
+        
+        # 12. Bonus สำหรับคุณภาพสินค้า
+        rating = product.get('rating', 0)
+        if rating >= 4.5:
+            score += 10
+        elif rating >= 4.0:
+            score += 5
+        
+        sold_count = product.get('sold_count', 0)
+        if sold_count > 100:
+            score += 8
+        elif sold_count > 50:
+            score += 4
+        elif sold_count > 10:
+            score += 2
         
         return score
     
-    def suggest_alternatives(self, query: str, items: List[Dict], limit: int = 5) -> List[str]:
-        """แนะนำคำค้นหาทางเลือก"""
+    def suggest_product_alternatives(self, query: str, products: List[Dict], limit: int = 5) -> List[str]:
+        """แนะนำคำค้นหาทางเลือกสำหรับสินค้า"""
         suggestions = set()
         query_lower = query.lower()
         
@@ -175,32 +297,39 @@ class AISearchEngine:
             if thai_word in query_lower:
                 suggestions.update(synonyms[:2])  # เอาแค่ 2 คำแรก
         
-        # หาคำที่คล้ายกันจากข้อมูล
-        for item in items[:20]:  # ตรวจแค่ 20 รายการแรก
-            if isinstance(item, tuple):
-                key, data = item
-            else:
-                key = item.get('key', '')
-                data = item
-            
-            # คำใน name_th ที่คล้ายกัน
-            name_words = data.get('name_th', '').split()
-            for word in name_words:
+        # หาคำที่คล้ายกันจากข้อมูลสินค้า
+        for product in products[:20]:  # ตรวจแค่ 20 รายการแรก
+            # คำในชื่อสินค้าที่คล้ายกัน
+            product_words = product.get('product_name', '').split()
+            for word in product_words:
                 if len(word) > 2 and SequenceMatcher(None, query_lower, word.lower()).ratio() > 0.6:
                     suggestions.add(word)
+            
+            # หมวดหมู่ที่เกี่ยวข้อง
+            category = product.get('category', '')
+            if category and len(category) > 1:
+                suggestions.add(category)
+        
+        # เพิ่มหมวดหมู่ยอดนิยม
+        popular_categories = ['อิเล็กทรอนิกส์', 'แฟชั่น', 'ความงาม', 'สุขภาพ']
+        suggestions.update(popular_categories)
         
         return list(suggestions)[:limit]
     
-    def get_search_insights(self, query: str, results: List) -> Dict:
-        """วิเคราะห์ผลการค้นหา"""
+    def get_search_insights(self, query: str, products: List[Dict]) -> Dict:
+        """วิเคราะห์ผลการค้นหาสินค้า"""
+        query_info = self._preprocess_query(query)
+        
         return {
             'query_length': len(query),
             'has_thai': bool(re.search(r'[ก-๙]', query)),
             'has_english': bool(re.search(r'[a-zA-Z]', query)),
-            'has_numbers': bool(re.search(r'\d', query)),
-            'results_count': len(results),
-            'top_score': results[0][0] if results else 0,
-            'avg_score': sum(r[0] for r in results) / len(results) if results else 0
+            'has_numbers': query_info['has_numbers'],
+            'detected_brands': query_info['brands'],
+            'detected_categories': query_info['categories'],
+            'price_range': query_info['price_range'],
+            'results_count': len(products),
+            'expanded_terms_count': len(query_info['expanded_terms'])
         }
 
 # สร้าง instance สำหรับใช้งาน

@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git restore:*)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(find:*)",
+      "Bash(mkdir:*)",
+      "Bash(python:*)",
+      "Bash(timeout 10 python:*)",
+      "Bash(mv:*)",
+      "Bash(curl:*)",
+      "Bash(timeout:*)",
+      "Bash(git remote add:*)",
+      "Bash(heroku config:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(heroku logs:*)"
+    ],
+    "deny": []
+  }
+}

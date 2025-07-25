@@ -4,3 +4,6 @@ gunicorn
 waitress
 python-dotenv
 requests
+supabase
+openai
+psycopg2-binary

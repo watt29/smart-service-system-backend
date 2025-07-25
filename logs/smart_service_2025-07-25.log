@@ -1,0 +1,26 @@
+[2025-07-25 15:06:27] INFO in SmartService: SQLite database initialized: smart_service.db
+[2025-07-25 15:07:07] INFO in SmartService: SQLite database initialized: smart_service.db
+[2025-07-25 15:07:07] INFO in SmartService: Migrated 8 items from JSON to SQLite
+[2025-07-25 15:07:07] INFO in SmartService: Operation 'migrate_from_json' completed in 0.003 seconds
+[2025-07-25 15:07:13] INFO in SmartService: SQLite database initialized: smart_service.db
+[2025-07-25 15:07:13] INFO in SmartService: Using SQLite database
+[2025-07-25 15:07:14] INFO in SmartService: เริ่มต้น Smart Service System...
+[2025-07-25 15:07:14] INFO in SmartService: ฐานข้อมูล (SQLite): 8 รายการ, อัตราเฉลี่ย 150.00 บาท
+[2025-07-25 15:07:14] INFO in SmartService: เริ่มต้นเซิร์ฟเวอร์ที่ 0.0.0.0:5000
+[2025-07-25 15:07:14] INFO in SmartService: โหมด DEBUG: False
+[2025-07-25 15:07:14] INFO in SmartService: Smart Service System พร้อมใช้งาน!
+[2025-07-25 15:10:21] INFO in SmartService: SQLite database initialized: smart_service.db
+[2025-07-25 15:10:21] INFO in SmartService: Using SQLite database
+[2025-07-25 15:10:21] INFO in SmartService: เริ่มต้น Smart Service System...
+[2025-07-25 15:10:21] INFO in SmartService: ฐานข้อมูล (SQLite): 8 รายการ, อัตราเฉลี่ย 150.00 บาท
+[2025-07-25 15:10:21] INFO in SmartService: เริ่มต้นเซิร์ฟเวอร์ที่ 0.0.0.0:5000
+[2025-07-25 15:10:21] INFO in SmartService: โหมด DEBUG: False
+[2025-07-25 15:10:21] INFO in SmartService: Smart Service System พร้อมใช้งาน!
+[2025-07-25 15:17:06] INFO in SmartService: SQLite database initialized: smart_service.db
+[2025-07-25 15:17:07] INFO in SmartService: เริ่มต้น Smart Service System...
+[2025-07-25 15:17:07] INFO in SmartService: ฐานข้อมูล (SQLite): 8 รายการ, อัตราเฉลี่ย 150.00 บาท
+[2025-07-25 15:17:07] INFO in SmartService: เริ่มต้นเซิร์ฟเวอร์ที่ 0.0.0.0:5000
+[2025-07-25 15:17:07] INFO in SmartService: โหมด DEBUG: False
+[2025-07-25 15:17:07] INFO in SmartService: Smart Service System พร้อมใช้งาน!
+[2025-07-25 15:17:57] INFO in SmartService: SQLite database initialized: smart_service.db
+[2025-07-25 15:18:18] INFO in SmartService: SQLite database initialized: smart_service.db
