@@ -333,7 +333,8 @@ class AffiliateLineHandler:
         
         # สร้างลิงก์แบบมืออาชีพ
         short_link = self._create_professional_link_display(offer_link)
-        message += f"🛒 {short_link}"
+        message += f"🛒 {short_link}\n"
+        message += f"👉 {offer_link}"
         
         self._reply_text(event, message)
     
@@ -366,7 +367,7 @@ class AffiliateLineHandler:
     
     def _create_professional_link_display(self, offer_link: str) -> str:
         """สร้างการแสดงลิงก์แบบมืออาชีพ ซ่อน URL ยาวๆ"""
-        # ตัวเลือกการแสดงลิงก์แบบมืออาชีพ
+        # ตัวเลือกการแสดงลิงก์แบบมืออาชีพ ไม่แสดง URL
         link_styles = [
             "📱 สั่งซื้อทันที",
             "🛍️ ดูสินค้า", 
@@ -375,14 +376,16 @@ class AffiliateLineHandler:
             "🎯 ซื้อเลย",
             "✨ สั่งได้ที่นี่",
             "🔥 สั่งทันที",
-            "💯 ซื้อตอนนี้"
+            "💯 ซื้อตอนนี้",
+            "🌟 คลิกเลย",
+            "⚡ สั่งด่วน"
         ]
         
-        # สุ่มเลือกสไตล์
+        # สุ่มเลือกสไตล์ (ไม่แสดง URL)
         import random
         style = random.choice(link_styles)
         
-        return f"{style} → {offer_link}"
+        return f"{style}"
     
     def _send_product_flex(self, event, product: Dict):
         """ส่ง Flex Message แสดงรายละเอียดสินค้า"""
@@ -553,7 +556,8 @@ class AffiliateLineHandler:
             
             # สร้างลิงก์แบบมืออาชีพ - ซ่อน URL ที่ยาว
             short_link = self._create_professional_link_display(offer_link)
-            products_text += f"🛒 {short_link}\n\n"
+            products_text += f"🛒 {short_link}\n"
+            products_text += f"👉 {offer_link}\n\n"
             products_text += "="*25 + "\n\n"
         
         products_text += "💡 เจอของดี copy ลิงก์ไปสั่งได้เลย!"
