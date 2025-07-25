@@ -267,7 +267,9 @@ class AffiliateLineHandler:
     
     def _handle_product_code_search(self, event, product_code: str):
         """ค้นหาสินค้าด้วยรหัสสินค้า"""
+        print(f"[DEBUG] Searching by product code: '{product_code}'")
         product = self.db.get_product_by_code(product_code.upper())
+        print(f"[DEBUG] Product found: {product is not None}")
         
         if product:
             self._send_product_flex(event, product)
