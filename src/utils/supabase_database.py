@@ -127,27 +127,78 @@ class SupabaseDatabase:
             self.logger.error(f"Error adding product: {e}")
             return None
     
-    def search_products(self, query: str, limit: int = 5) -> List[Dict]:
-        """ค้นหาสินค้า"""
+    def search_products(self, query: str, limit: int = 5, offset: int = 0, 
+                       category: str = None, min_price: float = None, 
+                       max_price: float = None, order_by: str = 'created_at') -> Dict:
+        """ค้นหาสินค้าพร้อม pagination และ filtering"""
         if not self.connected:
-            return []
+            return {"products": [], "total": 0, "has_more": False}
         
         try:
-            # ค้นหาในชื่อสินค้า, คำอธิบาย, และหมวดหมู่
-            response = self.client.table('products')\
-                .select('*')\
-                .or_(f'product_name.ilike.%{query}%,description.ilike.%{query}%,category.ilike.%{query}%')\
-                .limit(limit)\
-                .execute()
+            # สร้าง query พื้นฐาน
+            query_builder = self.client.table('products').select('*')
+            count_builder = self.client.table('products').select('*', count='exact')
+            
+            # เพิ่มเงื่อนไขการค้นหา
+            search_condition = f'product_name.ilike.%{query}%,description.ilike.%{query}%,category.ilike.%{query}%'
+            query_builder = query_builder.or_(search_condition)
+            count_builder = count_builder.or_(search_condition)
+            
+            # เพิ่มตัวกรองหมวดหมู่
+            if category:
+                query_builder = query_builder.eq('category', category)
+                count_builder = count_builder.eq('category', category)
+            
+            # เพิ่มตัวกรองราคา
+            if min_price is not None:
+                query_builder = query_builder.gte('price', min_price)
+                count_builder = count_builder.gte('price', min_price)
+            
+            if max_price is not None:
+                query_builder = query_builder.lte('price', max_price)
+                count_builder = count_builder.lte('price', max_price)
+            
+            # เรียงลำดับ
+            sort_column = order_by
+            if order_by == 'popularity':
+                sort_column = 'sold_count'
+            elif order_by == 'price_low':
+                sort_column = 'price'
+            elif order_by == 'price_high':
+                sort_column = 'price'
+                query_builder = query_builder.order(sort_column, desc=True)
+            elif order_by == 'rating':
+                sort_column = 'rating'
+                query_builder = query_builder.order(sort_column, desc=True)
+            
+            if order_by not in ['price_high', 'rating']:
+                query_builder = query_builder.order(sort_column, desc=True)
+            
+            # เพิ่ม pagination
+            query_builder = query_builder.range(offset, offset + limit - 1)
+            
+            # ดำเนินการ query
+            response = query_builder.execute()
+            count_response = count_builder.execute()
+            
+            products = response.data or []
+            total = count_response.count or 0
+            has_more = (offset + limit) < total
             
             # บันทึกการค้นหา
-            self.log_search(query, len(response.data))
+            self.log_search(query, len(products))
             
-            return response.data or []
+            return {
+                "products": products,
+                "total": total,
+                "has_more": has_more,
+                "current_offset": offset,
+                "limit": limit
+            }
             
         except Exception as e:
             self.logger.error(f"Error searching products: {e}")
-            return []
+            return {"products": [], "total": 0, "has_more": False}
     
     def get_product_by_code(self, product_code: str) -> Optional[Dict]:
         """ค้นหาสินค้าด้วยรหัสสินค้า"""
@@ -280,6 +331,58 @@ class SupabaseDatabase:
             self.logger.error(f"Error getting popular searches: {e}")
             return []
     
+    def get_categories(self) -> List[str]:
+        """ดึงรายการหมวดหมู่ทั้งหมด"""
+        if not self.connected:
+            return []
+        
+        try:
+            response = self.client.table('products')\
+                .select('category')\
+                .execute()
+            
+            categories = set()
+            for item in response.data or []:
+                if item.get('category'):
+                    categories.add(item['category'])
+            
+            return sorted(list(categories))
+            
+        except Exception as e:
+            self.logger.error(f"Error getting categories: {e}")
+            return []
+    
+    def get_price_range(self) -> Dict[str, float]:
+        """ดึงช่วงราคาของสินค้าทั้งหมด"""
+        if not self.connected:
+            return {"min_price": 0, "max_price": 0}
+        
+        try:
+            # ดึงราคาต่ำสุดและสูงสุด
+            min_response = self.client.table('products')\
+                .select('price')\
+                .order('price', desc=False)\
+                .limit(1)\
+                .execute()
+            
+            max_response = self.client.table('products')\
+                .select('price')\
+                .order('price', desc=True)\
+                .limit(1)\
+                .execute()
+            
+            min_price = min_response.data[0]['price'] if min_response.data else 0
+            max_price = max_response.data[0]['price'] if max_response.data else 0
+            
+            return {
+                "min_price": float(min_price),
+                "max_price": float(max_price)
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error getting price range: {e}")
+            return {"min_price": 0, "max_price": 0}
+
     def get_stats(self) -> Dict[str, Any]:
         """ดึงสถิติต่างๆ"""
         if not self.connected:
@@ -295,11 +398,18 @@ class SupabaseDatabase:
             # คำนวณราคาเฉลี่ย
             avg_price = self.client.rpc('get_average_price').execute()
             
+            # เพิ่มข้อมูลหมวดหมู่และช่วงราคา
+            categories = self.get_categories()
+            price_range = self.get_price_range()
+            
             return {
                 'total_products': products_count.count if products_count.count else 0,
                 'total_searches': searches_count.count if searches_count.count else 0,
                 'average_price': avg_price.data if avg_price.data else 0,
-                'database_type': 'Supabase'
+                'database_type': 'Supabase',
+                'categories_count': len(categories),
+                'categories': categories[:10],  # แสดงแค่ 10 หมวดหมู่แรก
+                'price_range': price_range
             }
             
         except Exception as e:

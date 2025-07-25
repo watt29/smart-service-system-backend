@@ -93,6 +93,20 @@ class AffiliateLineHandler:
                 self._handle_promotion_generation(event, product_code)
                 return
             
+            # ตรวจสอบคำสั่ง pagination
+            if text.startswith("หน้า") and ":" in text:
+                self._handle_pagination_command(event, text, user_id)
+                return
+            
+            # ตรวจสอบคำสั่ง filtering
+            if text.lower().startswith("กรอง "):
+                self._handle_filter_command(event, text[5:].strip(), user_id)
+                return
+            
+            if text.lower().startswith("เรียง "):
+                self._handle_sort_command(event, text[6:].strip(), user_id)
+                return
+            
             if text.lower() in ["สถิติ", "stats"]:
                 self._show_stats(event)
                 return
@@ -251,20 +265,125 @@ class AffiliateLineHandler:
             
             del self.admin_state[user_id]
     
-    def _handle_product_search(self, event, query: str, user_id: str = None):
-        """จัดการการค้นหาสินค้า"""
+    def _handle_pagination_command(self, event, text: str, user_id: str):
+        """จัดการคำสั่ง pagination เช่น 'หน้า2:แมว'"""
         try:
-            print(f"[DEBUG] Searching for: '{query}'")
-            products = self.db.search_products(query, config.MAX_RESULTS_PER_SEARCH)
-            print(f"[DEBUG] Found {len(products)} products")
+            # แยกข้อมูลจากคำสั่ง
+            parts = text.split(":")
+            page_part = parts[0]
+            page = int(page_part.replace("หน้า", ""))
+            query = parts[1] if len(parts) > 1 else ""
+            
+            # แยกข้อมูล filtering
+            category = None
+            min_price = None
+            max_price = None
+            order_by = 'created_at'
+            
+            for part in parts[2:]:
+                if part.startswith("cat:"):
+                    category = part[4:]
+                elif part.startswith("minp:"):
+                    min_price = float(part[5:])
+                elif part.startswith("maxp:"):
+                    max_price = float(part[5:])
+                elif part.startswith("sort:"):
+                    order_by = part[5:]
+            
+            self._handle_product_search(event, query, user_id, page, category, min_price, max_price, order_by)
+            
+        except (ValueError, IndexError) as e:
+            print(f"[ERROR] Invalid pagination command: {text}, error: {e}")
+            self._reply_text(event, "❌ คำสั่งไม่ถูกต้อง กรุณาลองใหม่")
+    
+    def _handle_filter_command(self, event, filter_text: str, user_id: str):
+        """จัดการคำสั่งกรอง เช่น 'กรอง แมว หมวดหมู่:สัตว์เลี้ยง ราคา:10-100'"""
+        try:
+            parts = filter_text.split()
+            query = parts[0] if parts else ""
+            
+            category = None
+            min_price = None
+            max_price = None
+            
+            for part in parts[1:]:
+                if part.startswith("หมวดหมู่:"):
+                    category = part[9:]
+                elif part.startswith("ราคา:"):
+                    price_range = part[5:]
+                    if "-" in price_range:
+                        min_str, max_str = price_range.split("-")
+                        min_price = float(min_str) if min_str else None
+                        max_price = float(max_str) if max_str else None
+            
+            self._handle_product_search(event, query, user_id, 1, category, min_price, max_price)
+            
+        except Exception as e:
+            print(f"[ERROR] Invalid filter command: {filter_text}, error: {e}")
+            self._reply_text(event, "❌ คำสั่งกรองไม่ถูกต้อง\n💡 ตัวอย่าง: 'กรอง แมว หมวดหมู่:สัตว์เลี้ยง ราคา:10-100'")
+    
+    def _handle_sort_command(self, event, sort_text: str, user_id: str):
+        """จัดการคำสั่งเรียง เช่น 'เรียง แมว ราคาถูก'"""
+        try:
+            parts = sort_text.split()
+            query = parts[0] if parts else ""
+            sort_option = parts[1] if len(parts) > 1 else "ใหม่"
+            
+            order_by_map = {
+                "ใหม่": "created_at",
+                "ราคาถูก": "price_low", 
+                "ราคาแพง": "price_high",
+                "ขายดี": "popularity",
+                "คะแนน": "rating"
+            }
+            
+            order_by = order_by_map.get(sort_option, "created_at")
+            
+            self._handle_product_search(event, query, user_id, 1, None, None, None, order_by)
+            
+        except Exception as e:
+            print(f"[ERROR] Invalid sort command: {sort_text}, error: {e}")
+            self._reply_text(event, "❌ คำสั่งเรียงไม่ถูกต้อง\n💡 ตัวอย่าง: 'เรียง แมว ราคาถูก' (ใหม่/ราคาถูก/ราคาแพง/ขายดี/คะแนน)")
+    
+    def _handle_product_search(self, event, query: str, user_id: str = None, 
+                             page: int = 1, category: str = None, 
+                             min_price: float = None, max_price: float = None, 
+                             order_by: str = 'created_at'):
+        """จัดการการค้นหาสินค้าพร้อม pagination และ filtering"""
+        try:
+            print(f"[DEBUG] Searching for: '{query}' (page {page})")
+            
+            # คำนวณ offset สำหรับ pagination
+            limit = config.MAX_RESULTS_PER_SEARCH
+            offset = (page - 1) * limit
+            
+            # ค้นหาสินค้า
+            search_result = self.db.search_products(
+                query=query, 
+                limit=limit, 
+                offset=offset,
+                category=category,
+                min_price=min_price,
+                max_price=max_price,
+                order_by=order_by
+            )
+            
+            products = search_result.get('products', [])
+            total = search_result.get('total', 0)
+            has_more = search_result.get('has_more', False)
+            
+            print(f"[DEBUG] Found {len(products)} products (total: {total}, has_more: {has_more})")
             
             if products:
-                if len(products) == 1:
-                    # แสดงสินค้าเดียวแบบข้อความธรรมดา
+                if len(products) == 1 and total == 1:
+                    # แสดงสินค้าเดียว
                     self._send_product_simple(event, products[0])
                 else:
-                    # แสดงรายการสินค้าหลายรายการ
-                    self._send_products_list(event, products, query)
+                    # แสดงรายการสินค้าหลายรายการพร้อม pagination
+                    self._send_products_list_with_pagination(
+                        event, products, query, page, total, has_more, 
+                        category, min_price, max_price, order_by
+                    )
             else:
                 self._send_not_found_message(event, query)
                 
@@ -559,6 +678,116 @@ class AffiliateLineHandler:
             "contents": bubbles
         }
     
+    def _send_products_list_with_pagination(self, event, products: List[Dict], query: str, 
+                                          page: int, total: int, has_more: bool,
+                                          category: str = None, min_price: float = None, 
+                                          max_price: float = None, order_by: str = 'created_at'):
+        """ส่งรายการสินค้าพร้อม pagination controls"""
+        
+        # สร้าง Flex Carousel สำหรับสินค้า
+        flex_contents = self._create_products_carousel(products, query)
+        
+        # เพิ่มข้อมูล pagination
+        total_pages = (total + config.MAX_RESULTS_PER_SEARCH - 1) // config.MAX_RESULTS_PER_SEARCH
+        
+        # สร้างปุ่ม pagination
+        pagination_buttons = []
+        
+        # ปุ่มหน้าก่อนหน้า
+        if page > 1:
+            prev_action = f"หน้า{page-1}:{query}"
+            if category:
+                prev_action += f":cat:{category}"
+            if min_price:
+                prev_action += f":minp:{min_price}"
+            if max_price:
+                prev_action += f":maxp:{max_price}"
+            if order_by != 'created_at':
+                prev_action += f":sort:{order_by}"
+                
+            pagination_buttons.append({
+                "type": "button",
+                "action": {
+                    "type": "message",
+                    "label": "◀️ หน้าก่อน",
+                    "text": prev_action
+                },
+                "style": "secondary",
+                "height": "sm"
+            })
+        
+        # ปุ่มหน้าถัดไป
+        if has_more:
+            next_action = f"หน้า{page+1}:{query}"
+            if category:
+                next_action += f":cat:{category}"
+            if min_price:
+                next_action += f":minp:{min_price}"
+            if max_price:
+                next_action += f":maxp:{max_price}"
+            if order_by != 'created_at':
+                next_action += f":sort:{order_by}"
+                
+            pagination_buttons.append({
+                "type": "button",
+                "action": {
+                    "type": "message",
+                    "label": "หน้าถัดไป ▶️",
+                    "text": next_action
+                },
+                "style": "secondary", 
+                "height": "sm"
+            })
+        
+        # เพิ่ม footer สำหรับ pagination ถ้ามีมากกว่า 1 หน้า
+        if total_pages > 1:
+            flex_contents["contents"].append({
+                "type": "bubble",
+                "size": "nano",
+                "body": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": f"📄 หน้า {page}/{total_pages}",
+                            "size": "sm",
+                            "align": "center",
+                            "weight": "bold",
+                            "color": "#666666"
+                        },
+                        {
+                            "type": "text",
+                            "text": f"รวม {total} รายการ",
+                            "size": "xs",
+                            "align": "center",
+                            "color": "#999999",
+                            "margin": "xs"
+                        }
+                    ],
+                    "paddingAll": "12px"
+                },
+                "footer": {
+                    "type": "box",
+                    "layout": "horizontal",
+                    "contents": pagination_buttons,
+                    "spacing": "sm",
+                    "paddingAll": "8px"
+                } if pagination_buttons else None
+            })
+        
+        flex_message = FlexMessage(
+            alt_text=f"🔍 เจอสินค้า {len(products)} รายการ (หน้า {page}/{total_pages})",
+            contents=FlexContainer.from_dict(flex_contents)
+        )
+        
+        self.line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[flex_message]
+            )
+        )
+    
     def _send_product_flex(self, event, product: Dict):
         """ส่ง Flex Message แสดงรายละเอียดสินค้า"""
         commission_amount = product.get('commission_amount', 0)
@@ -744,18 +973,35 @@ class AffiliateLineHandler:
         self._reply_text(event, stats_text)
     
     def _show_categories(self, event):
-        """แสดงหมวดหมู่สินค้า"""
-        # ในอนาคตสามารถดึงจาก categories table
-        categories = [
-            "อิเล็กทรอนิกส์", "แฟชั่น", "ความงาม", "สุขภาพ",
-            "บ้านและสวน", "กีฬา", "หนังสือ", "เด็กและของเล่น", 
-            "อาหาร", "อื่นๆ"
-        ]
-        
-        categories_text = "📂 หมวดหมู่สินค้า:\n\n" + "\n".join([f"• {cat}" for cat in categories])
-        categories_text += "\n\n💡 พิมพ์ชื่อหมวดหมู่เพื่อค้นหาสินค้าในหมวดนั้น"
-        
-        self._reply_text(event, categories_text)
+        """แสดงหมวดหมู่สินค้าและตัวเลือกการกรอง"""
+        try:
+            # ดึงหมวดหมู่จริงจากฐานข้อมูล
+            categories = self.db.get_categories()
+            price_range = self.db.get_price_range()
+            
+            if not categories:
+                categories = ["อิเล็กทรอนิกส์", "แฟชั่น", "ความงาม", "สุขภาพ", "บ้านและสวน", "กีฬา", "หนังสือ", "เด็กและของเล่น", "อาหาร", "อื่นๆ"]
+            
+            categories_text = "📂 หมวดหมู่สินค้า:\n\n"
+            categories_text += "\n".join([f"• {cat}" for cat in categories[:15]])  # แสดงแค่ 15 หมวดหมู่แรก
+            
+            if len(categories) > 15:
+                categories_text += f"\n... และอีก {len(categories) - 15} หมวดหมู่"
+            
+            categories_text += f"\n\n💰 ช่วงราคา: {price_range['min_price']:,.0f} - {price_range['max_price']:,.0f} บาท"
+            
+            categories_text += "\n\n🎯 วิธีใช้ตัวกรอง:\n"
+            categories_text += "• พิมพ์ชื่อหมวดหมู่ เช่น 'สัตว์เลี้ยง'\n"
+            categories_text += "• กรอง แมว หมวดหมู่:สัตว์เลี้ยง\n"
+            categories_text += "• กรอง ครีม ราคา:50-200\n"
+            categories_text += "• เรียง โทรศัพท์ ราคาถูก\n"
+            categories_text += "• เรียง กระเป๋า ขายดี"
+            
+            self._reply_text(event, categories_text)
+            
+        except Exception as e:
+            print(f"[ERROR] Error showing categories: {e}")
+            self._reply_text(event, "❌ เกิดข้อผิดพลาดในการแสดงหมวดหมู่")
     
     def _show_all_products(self, event, user_id: str):
         """แสดงสินค้าทั้งหมด (สำหรับแอดมิน)"""
