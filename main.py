@@ -1,7 +1,10 @@
 from flask import Flask, request, abort, render_template, jsonify
+
+print("Starting Flask application...")
 import re
 import os
 import json # Added import for json module
+import requests # Added import for requests
 from dotenv import load_dotenv # Import load_dotenv
 
 from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
@@ -10,6 +13,7 @@ from linebot.exceptions import InvalidSignatureError
 from linebot.v3.webhooks import MessageEvent
 from linebot.v3.webhooks import TextMessageContent
 from linebot.v3.messaging import QuickReply, QuickReplyItem, MessageAction
+import traceback # Added import for traceback
 
 app = Flask(__name__)
 
@@ -137,7 +141,17 @@ def fuzzy_search_knowledge_base(query):
             found_items.append((key, item))
     return found_items
 
+def fetch_web_content(url):
+    """Fetches content from a given URL using requests."""
+    try:
+        response = requests.get(url, timeout=10) # 10 second timeout
+        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+        return f"เนื้อหาจาก {url}:\n\n{response.text[:1000]}..." # Return first 1000 chars
+    except requests.exceptions.RequestException as e:
+        return f"ไม่สามารถดึงข้อมูลจาก {url} ได้: {e}"
+
 # --- Flask Routes ---
+
 @app.route('/')
 def home():
     """Renders the main HTML page."""
@@ -182,194 +196,223 @@ def callback():
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    user_id = event.source.user_id
+    user_id = event.source.user.id
     text = event.message.text.lower().strip()
 
-    # --- Admin System Entry Point ---
-    if text in ["admin", "แอดมิน", "เมนูแอดมิน"]:
-        admin_state[user_id] = {"mode": "main_menu"}
-        quick_replies = QuickReply(items=[
-            QuickReplyItem(action=MessageAction(label="➕ เพิ่มข้อมูล", text="➕ เพิ่มข้อมูล")),
-            QuickReplyItem(action=MessageAction(label="✏️ แก้ไขข้อมูล", text="✏️ แก้ไขข้อมูล")),
-            QuickReplyItem(action=MessageAction(label="❌ ลบข้อมูล", text="❌ ลบข้อมูล")),
-            QuickReplyItem(action=MessageAction(label="📋 ดูทั้งหมด", text="📋 ดูทั้งหมด")),
-        ])
-        line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[TextMessage(text="เลือกเมนูแอดมิน:", quick_reply=quick_replies)]
+    try:
+        # --- Admin System Entry Point ---
+        if text in ["admin", "แอดมิน", "เมนูแอดมิน"]:
+            admin_state[user_id] = {"mode": "main_menu"}
+            quick_replies = QuickReply(items=[
+                QuickReplyItem(action=MessageAction(label="➕ เพิ่มข้อมูล", text="➕ เพิ่มข้อมูล")),
+                QuickReplyItem(action=MessageAction(label="✏️ แก้ไขข้อมูล", text="✏️ แก้ไขข้อมูล")),
+                QuickReplyItem(action=MessageAction(label="❌ ลบข้อมูล", text="❌ ลบข้อมูล")),
+                QuickReplyItem(action=MessageAction(label="📋 ดูทั้งหมด", text="📋 ดูทั้งหมด")),
+            ])
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text="เลือกเมนูแอดมิน:", quick_reply=quick_replies)]
+                )
             )
-        )
-        return
-
-    # --- Handle Admin Flow (Simplified - actual implementation would be more complex) ---
-    if user_id in admin_state:
-        current_mode = admin_state[user_id].get("mode")
-
-        if text == "cancel":
-            del admin_state[user_id]
-            line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ยกเลิกการดำเนินการแอดมินแล้ว")]))
             return
 
-        if current_mode == "main_menu":
-            if text == "➕ เพิ่มข้อมูล":
-                admin_state[user_id] = {"mode": "add_item_start", "data": {}}
-                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="กรุณาป้อนรหัสรายการ (เช่น CBC, 31001):")]))
+        # --- Handle Admin Flow (Simplified - actual implementation would be more complex) ---
+        if user_id in admin_state:
+            current_mode = admin_state[user_id].get("mode")
+
+            if text == "cancel":
+                del admin_state[user_id]
+                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ยกเลิกการดำเนินการแอดมินแล้ว")]))
                 return
-            elif text == "✏️ แก้ไขข้อมูล":
-                admin_state[user_id] = {"mode": "edit_item_start"}
-                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="กรุณาป้อนรหัสรายการที่ต้องการแก้ไข:")]))
-                return
-            elif text == "❌ ลบข้อมูล":
-                admin_state[user_id] = {"mode": "delete_item_start"}
-                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="กรุณาป้อนรหัสรายการที่ต้องการลบ:")]))
-                return
-            elif text == "📋 ดูทั้งหมด":
-                admin_state[user_id] = {"mode": "list_all"}
-                if KNOWLEDGE_BASE:
-                    all_items = "\n\n".join([f"รหัส: {key}\nชื่อ: {item['name_th']}" for key, item in KNOWLEDGE_BASE.items()])
-                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=f"รายการทั้งหมด:\n{all_items}")]))
+
+            if current_mode == "main_menu":
+                if text == "➕ เพิ่มข้อมูล":
+                    admin_state[user_id] = {"mode": "add_item_start", "data": {}}
+                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="กรุณาป้อนรหัสรายการ (เช่น CBC, 31001):")]))
+                    return
+                elif text == "✏️ แก้ไขข้อมูล":
+                    admin_state[user_id] = {"mode": "edit_item_start"}
+                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="กรุณาป้อนรหัสรายการที่ต้องการแก้ไข:")]))
+                    return
+                elif text == "❌ ลบข้อมูล":
+                    admin_state[user_id] = {"mode": "delete_item_start"}
+                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="กรุณาป้อนรหัสรายการที่ต้องการลบ:")]))
+                    return
+                elif text == "📋 ดูทั้งหมด":
+                    admin_state[user_id] = {"mode": "list_all"}
+                    if KNOWLEDGE_BASE:
+                        all_items = "\n\n".join([f"รหัส: {key}\nชื่อ: {item['name_th']}" for key, item in KNOWLEDGE_BASE.items()])
+                        line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=f"รายการทั้งหมด:\n{all_items}")]))
+                    else:
+                        line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ยังไม่มีข้อมูลในระบบ")]))
+                    del admin_state[user_id] # Exit admin mode after listing
+                    return
                 else:
-                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ยังไม่มีข้อมูลในระบบ")]))
-                del admin_state[user_id] # Exit admin mode after listing
+                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="คำสั่งไม่ถูกต้อง กรุณาเลือกจากเมนู")]))
+                    return
+            
+            # --- Add Item Flow (Simplified) ---
+            if current_mode == "add_item_start":
+                admin_state[user_id]["data"]["key"] = text.lower()
+                admin_state[user_id]["mode"] = "add_item_name_th"
+                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ป้อนชื่อรายการภาษาไทย:")]))
                 return
-            else:
-                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="คำสั่งไม่ถูกต้อง กรุณาเลือกจากเมนู")]))
+            if current_mode == "add_item_name_th":
+                admin_state[user_id]["data"]["name_th"] = text
+                admin_state[user_id]["mode"] = "add_item_name_en"
+                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ป้อนชื่อรายการภาษาอังกฤษ:")]))
                 return
-        
-        # --- Add Item Flow (Simplified) ---
-        if current_mode == "add_item_start":
-            admin_state[user_id]["data"]["key"] = text.lower()
-            admin_state[user_id]["mode"] = "add_item_name_th"
-            line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ป้อนชื่อรายการภาษาไทย:")]))
-            return
-        if current_mode == "add_item_name_th":
-            admin_state[user_id]["data"]["name_th"] = text
-            admin_state[user_id]["mode"] = "add_item_name_en"
-            line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ป้อนชื่อรายการภาษาอังกฤษ:")]))
-            return
-        if current_mode == "add_item_name_en":
-            admin_state[user_id]["data"]["name_en"] = text
-            admin_state[user_id]["mode"] = "add_item_rate"
-            line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ป้อนอัตราค่าบริการ (ตัวเลข):")]))
-            return
-        if current_mode == "add_item_rate":
-            try:
-                admin_state[user_id]["data"]["rate_baht"] = float(text)
-                admin_state[user_id]["data"]["claimable"] = True # Default to True for simplicity
-                admin_state[user_id]["data"]["rights"] = ["กรมบัญชีกลาง", "ทุกสิทธิ"] # Default
-                admin_state[user_id]["data"]["cgd_code"] = "N/A"
-                admin_state[user_id]["data"]["cpt"] = "N/A"
-                admin_state[user_id]["data"]["icd10"] = "N/A"
-                admin_state[user_id]["data"]["notes"] = ""
+            if current_mode == "add_item_name_en":
+                admin_state[user_id]["data"]["name_en"] = text
+                admin_state[user_id]["mode"] = "add_item_rate"
+                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ป้อนอัตราค่าบริการ (ตัวเลข):")]))
+                return
+            if current_mode == "add_item_rate":
+                try:
+                    admin_state[user_id]["data"]["rate_baht"] = float(text)
+                    admin_state[user_id]["data"]["claimable"] = True # Default to True for simplicity
+                    admin_state[user_id]["data"]["rights"] = ["กรมบัญชีกลาง", "ทุกสิทธิ"] # Default
+                    admin_state[user_id]["data"]["cgd_code"] = "N/A"
+                    admin_state[user_id]["data"]["cpt"] = "N/A"
+                    admin_state[user_id]["data"]["icd10"] = "N/A"
+                    admin_state[user_id]["data"]["notes"] = ""
 
-                item_key = admin_state[user_id]["data"]["key"]
-                KNOWLEDGE_BASE[item_key] = admin_state[user_id]["data"]
-                save_knowledge_base() # Save after adding
+                    item_key = admin_state[user_id]["data"]["key"]
+                    KNOWLEDGE_BASE[item_key] = admin_state[user_id]["data"]
+                    save_knowledge_base() # Save after adding
+                    
+                    summary = f"เพิ่มข้อมูลสำเร็จ:\nรหัส: {item_key}\nชื่อ: {KNOWLEDGE_BASE[item_key]['name_th']}\nอัตรา: {KNOWLEDGE_BASE[item_key]['rate_baht']}"
+                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=summary)]))
+                    del admin_state[user_id] # Exit admin mode
+                    return
+                except ValueError:
+                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="อัตราค่าบริการต้องเป็นตัวเลข กรุณาป้อนใหม่:")]))
+                    return
+
+            # --- Edit Item Flow (Simplified) ---
+            if current_mode == "edit_item_start":
+                item_key = text.lower()
+                if item_key in KNOWLEDGE_BASE:
+                    admin_state[user_id] = {"mode": "edit_item_field", "key": item_key}
+                    current_data = KNOWLEDGE_BASE[item_key]
+                    summary = f"ข้อมูลปัจจุบันของ {item_key}:\n"
+                    for k, v in current_data.items():
+                        summary += f"- {k}: {v}\n"
+                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=f"{summary}\nกรุณาป้อนชื่อฟิลด์ที่ต้องการแก้ไข (เช่น name_th, rate_baht):")]))
+                    return
+                else:
+                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ไม่พบรหัสรายการนี้ กรุณาป้อนใหม่:")]))
+                    return
+            if current_mode == "edit_item_field":
+                field_name = text.lower()
+                item_key = admin_state[user_id]["key"]
+                if field_name in KNOWLEDGE_BASE[item_key]:
+                    admin_state[user_id]["field"] = field_name
+                    admin_state[user_id]["mode"] = "edit_item_value"
+                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=f"ป้อนค่าใหม่สำหรับ {field_name}:")]))
+                    return
+                else:
+                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ไม่พบฟิลด์นี้ กรุณาป้อนชื่อฟิลด์ที่ถูกต้อง:")]))
+                    return
+            if current_mode == "edit_item_value":
+                item_key = admin_state[user_id]["key"]
+                field_name = admin_state[user_id]["field"]
+                new_value = text
                 
-                summary = f"เพิ่มข้อมูลสำเร็จ:\nรหัส: {item_key}\nชื่อ: {KNOWLEDGE_BASE[item_key]['name_th']}\nอัตรา: {KNOWLEDGE_BASE[item_key]['rate_baht']}"
+                # Type conversion for rate_baht
+                if field_name == "rate_baht":
+                    try:
+                        new_value = float(new_value)
+                    except ValueError:
+                        line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ค่าอัตราต้องเป็นตัวเลข กรุณาป้อนใหม่:")]))
+                        return
+                elif field_name == "claimable":
+                    new_value = new_value.lower() == "true"
+                elif field_name == "rights":
+                    new_value = [s.strip() for s in new_value.split(',')] 
+
+                KNOWLEDGE_BASE[item_key][field_name] = new_value
+                save_knowledge_base() # Save after editing
+                summary = f"แก้ไขข้อมูลสำเร็จ:\nรหัส: {item_key}\nฟิลด์: {field_name}\nค่าใหม่: {new_value}"
                 line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=summary)]))
                 del admin_state[user_id] # Exit admin mode
                 return
-            except ValueError:
-                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="อัตราค่าบริการต้องเป็นตัวเลข กรุณาป้อนใหม่:")]))
-                return
 
-        # --- Edit Item Flow (Simplified) ---
-        if current_mode == "edit_item_start":
-            item_key = text.lower()
-            if item_key in KNOWLEDGE_BASE:
-                admin_state[user_id] = {"mode": "edit_item_field", "key": item_key}
-                current_data = KNOWLEDGE_BASE[item_key]
-                summary = f"ข้อมูลปัจจุบันของ {item_key}:\n"
-                for k, v in current_data.items():
-                    summary += f"- {k}: {v}\n"
-                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=f"{summary}\nกรุณาป้อนชื่อฟิลด์ที่ต้องการแก้ไข (เช่น name_th, rate_baht):")]))
-                return
-            else:
-                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ไม่พบรหัสรายการนี้ กรุณาป้อนใหม่:")]))
-                return
-        if current_mode == "edit_item_field":
-            field_name = text.lower()
-            item_key = admin_state[user_id]["key"]
-            if field_name in KNOWLEDGE_BASE[item_key]:
-                admin_state[user_id]["field"] = field_name
-                admin_state[user_id]["mode"] = "edit_item_value"
-                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=f"ป้อนค่าใหม่สำหรับ {field_name}:")]))
-                return
-            else:
-                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ไม่พบฟิลด์นี้ กรุณาป้อนชื่อฟิลด์ที่ถูกต้อง:")]))
-                return
-        if current_mode == "edit_item_value":
-            item_key = admin_state[user_id]["key"]
-            field_name = admin_state[user_id]["field"]
-            new_value = text
-            
-            # Type conversion for rate_baht
-            if field_name == "rate_baht":
-                try:
-                    new_value = float(new_value)
-                except ValueError:
-                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ค่าอัตราต้องเป็นตัวเลข กรุณาป้อนใหม่:")]))
+            # --- Delete Item Flow (Simplified) ---
+            if current_mode == "delete_item_start":
+                item_key = text.lower()
+                if item_key in KNOWLEDGE_BASE:
+                    admin_state[user_id] = {"mode": "delete_item_confirm", "key": item_key}
+                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=f"คุณต้องการลบรายการ '{KNOWLEDGE_BASE[item_key]['name_th']}' ใช่หรือไม่? (confirm/cancel)")]))
                     return
-            elif field_name == "claimable":
-                new_value = new_value.lower() == "true"
-            elif field_name == "rights":
-                new_value = [s.strip() for s in new_value.split(',')] 
+                else:
+                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ไม่พบรหัสรายการนี้ กรุณาป้อนใหม่:")]))
+                    return
+            if current_mode == "delete_item_confirm":
+                if text == "confirm":
+                    item_key = admin_state[user_id]["key"]
+                    del KNOWLEDGE_BASE[item_key]
+                    save_knowledge_base() # Save after deleting
+                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=f"ลบรายการ '{item_key}' สำเร็จแล้ว")]))
+                    return
+                else:
+                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ยกเลิกการลบรายการ")]))
+                    return
 
-            KNOWLEDGE_BASE[item_key][field_name] = new_value
-            save_knowledge_base() # Save after editing
-            summary = f"แก้ไขข้อมูลสำเร็จ:\nรหัส: {item_key}\nฟิลด์: {field_name}\nค่าใหม่: {new_value}"
-            line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=summary)]))
-            del admin_state[user_id] # Exit admin mode
-            return
-
-        # --- Delete Item Flow (Simplified) ---
-        if current_mode == "delete_item_start":
-            item_key = text.lower()
-            if item_key in KNOWLEDGE_BASE:
-                admin_state[user_id] = {"mode": "delete_item_confirm", "key": item_key}
-                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=f"คุณต้องการลบรายการ '{KNOWLEDGE_BASE[item_key]['name_th']}' ใช่หรือไม่? (confirm/cancel)")]))
+        # --- Web Fetch Command ---
+        if text.startswith("fetch "):
+            url_to_fetch = text[len("fetch "):
+].strip()
+            if url_to_fetch:
+                fetched_content = fetch_web_content(url_to_fetch)
+                line_bot_api.reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[TextMessage(text=fetched_content)]
+                    )
+                )
                 return
             else:
-                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ไม่พบรหัสรายการนี้ กรุณาป้อนใหม่:")]))
-                return
-        if current_mode == "delete_item_confirm":
-            if text == "confirm":
-                item_key = admin_state[user_id]["key"]
-                del KNOWLEDGE_BASE[item_key]
-                save_knowledge_base() # Save after deleting
-                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=f"ลบรายการ '{item_key}' สำเร็จแล้ว")]))
-                return
-            else:
-                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ยกเลิกการลบรายการ")]))
+                line_bot_api.reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[TextMessage(text="กรุณาระบุ URL ที่ต้องการดึงข้อมูล (ตัวอย่าง: fetch https://www.example.com)")]
+                    )
+                )
                 return
 
-    # --- General Search (if not in admin mode) ---
-    found_items = fuzzy_search_knowledge_base(text)
-    if found_items:
-        # For simplicity, reply with the first match
-        key, item_data = found_items[0]
-        formatted_result = format_search_result(item_data, text)
+        # --- General Search (if not in admin mode) ---
+        found_items = fuzzy_search_knowledge_base(text)
+        if found_items:
+            # For simplicity, reply with the first match
+            key, item_data = found_items[0]
+            formatted_result = format_search_result(item_data, text)
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=formatted_result["line"])]
+                )
+            )
+        else:
+            link = generate_cgd_search_link(text)
+            not_found_message = (
+                f"❌ ไม่พบข้อมูล \"{text}\" ในระบบฐานความรู้ภายใน\n\n"
+                f"คุณสามารถค้นหาข้อมูลที่เป็นทางการและล่าสุดได้ที่:\n"
+                f"[คลิกเพื่อค้นหา \"{text}\" ใน mbdb.cgd.go.th]({link})"
+            )
+            line_bot_api.reply_message(
+                event.reply_token,
+                ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=not_found_message)])
+            )
+
+    except Exception as e:
+        app.logger.error(f"Error in handle_message: {traceback.format_exc()}")
         line_bot_api.reply_message(
             ReplyMessageRequest(
                 reply_token=event.reply_token,
-                messages=[TextMessage(text=formatted_result["line"])]
+                messages=[TextMessage(text="เกิดข้อผิดพลาดภายในระบบ กรุณาลองใหม่อีกครั้ง หรือติดต่อผู้ดูแลระบบ")]
             )
         )
-    else:
-        link = generate_cgd_search_link(text)
-        not_found_message = (
-            f"❌ ไม่พบข้อมูล \\\"{text}\\\" ในระบบฐานความรู้ภายใน\\n\\n"
-            f"คุณสามารถค้นหาข้อมูลที่เป็นทางการและล่าสุดได้ที่:\\n"
-            f"[คลิกเพื่อค้นหา \\\"{text}\\\" ใน mbdb.cgd.go.th]({link})"
-        )
-        line_bot_api.reply_message(
-            event.reply_token,
-            ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=not_found_message)])
-        )
 
-if __name__ == "__main__":
-    import os
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+
