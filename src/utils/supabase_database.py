@@ -503,3 +503,144 @@ class SupabaseDatabase:
         except Exception as e:
             self.logger.error(f"Error getting stats: {e}")
             return {'error': str(e)}
+    
+    def bulk_update_products(self, product_codes: List[str], update_data: Dict[str, Any]) -> Dict[str, Any]:
+        """อัปเดตสินค้าหลายรายการพร้อมกัน"""
+        if not self.connected:
+            return {"success": False, "message": "Database not connected"}
+        
+        try:
+            # คำนวณ commission_amount ใหม่หากจำเป็น
+            if 'price' in update_data or 'commission_rate' in update_data:
+                # ถ้ามีการอัปเดตราคาหรือค่าคอมมิชชั่น ต้องคำนวณใหม่
+                updated_products = []
+                
+                for code in product_codes:
+                    product = self.get_product_by_code(code)
+                    if product:
+                        price = update_data.get('price', product['price'])
+                        rate = update_data.get('commission_rate', product['commission_rate'])
+                        commission_amount = (float(price) * float(rate)) / 100
+                        
+                        final_update_data = update_data.copy()
+                        final_update_data['commission_amount'] = commission_amount
+                        final_update_data['updated_at'] = datetime.now().isoformat()
+                        
+                        response = self.client.table('products')\
+                            .update(final_update_data)\
+                            .eq('product_code', code)\
+                            .execute()
+                        
+                        if response.data:
+                            updated_products.append(code)
+                
+                return {
+                    "success": True,
+                    "updated_count": len(updated_products),
+                    "updated_codes": updated_products
+                }
+            else:
+                # อัปเดตปกติ
+                update_data['updated_at'] = datetime.now().isoformat()
+                
+                response = self.client.table('products')\
+                    .update(update_data)\
+                    .in_('product_code', product_codes)\
+                    .execute()
+                
+                return {
+                    "success": True,
+                    "updated_count": len(response.data),
+                    "message": f"Updated {len(response.data)} products"
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Error in bulk update: {e}")
+            return {"success": False, "message": str(e)}
+    
+    def bulk_delete_products(self, product_codes: List[str]) -> Dict[str, Any]:
+        """ลบสินค้าหลายรายการพร้อมกัน"""
+        if not self.connected:
+            return {"success": False, "message": "Database not connected"}
+        
+        try:
+            response = self.client.table('products')\
+                .delete()\
+                .in_('product_code', product_codes)\
+                .execute()
+            
+            return {
+                "success": True,
+                "deleted_count": len(response.data),
+                "message": f"Deleted {len(response.data)} products"
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error in bulk delete: {e}")
+            return {"success": False, "message": str(e)}
+    
+    def get_products_by_category_bulk(self, categories: List[str], limit: int = 100) -> Dict[str, List[Dict]]:
+        """ดึงสินค้าหลายหมวดหมู่พร้อมกัน"""
+        if not self.connected:
+            return {}
+        
+        try:
+            result = {}
+            
+            for category in categories:
+                response = self.client.table('products')\
+                    .select('*')\
+                    .eq('category', category)\
+                    .order('sold_count', desc=True)\
+                    .limit(limit)\
+                    .execute()
+                
+                result[category] = response.data or []
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Error getting products by categories: {e}")
+            return {}
+    
+    def get_low_stock_products(self, threshold: int = 10) -> List[Dict]:
+        """ดึงสินค้าที่มียอดขายต่ำ (อาจต้องการปรับปรุง)"""
+        if not self.connected:
+            return []
+        
+        try:
+            response = self.client.table('products')\
+                .select('*')\
+                .lte('sold_count', threshold)\
+                .order('sold_count', desc=False)\
+                .limit(50)\
+                .execute()
+            
+            return response.data or []
+            
+        except Exception as e:
+            self.logger.error(f"Error getting low stock products: {e}")
+            return []
+    
+    def get_top_products_by_metric(self, metric: str = 'sold_count', limit: int = 10) -> List[Dict]:
+        """ดึงสินค้าอันดับสูงตามเกณฑ์ที่กำหนด"""
+        if not self.connected:
+            return []
+        
+        try:
+            # Validate metric
+            valid_metrics = ['sold_count', 'price', 'rating', 'commission_amount']
+            if metric not in valid_metrics:
+                metric = 'sold_count'
+            
+            response = self.client.table('products')\
+                .select('*')\
+                .order(metric, desc=True)\
+                .limit(limit)\
+                .execute()
+            
+            return response.data or []
+            
+        except Exception as e:
+            self.logger.error(f"Error getting top products by {metric}: {e}")
+            return []

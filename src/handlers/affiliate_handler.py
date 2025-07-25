@@ -119,6 +119,24 @@ class AffiliateLineHandler:
                 self._show_category_stats(event)
                 return
             
+            if text.lower().startswith("bulk-update ") and user_id == config.ADMIN_USER_ID:
+                # คำสั่ง: bulk-update [codes] [field]=[value]
+                # ตัวอย่าง: bulk-update PROD001,PROD002 commission_rate=15
+                self._handle_bulk_update(event, text[12:].strip())
+                return
+            
+            if text.lower().startswith("bulk-delete ") and user_id == config.ADMIN_USER_ID:
+                # คำสั่ง: bulk-delete [codes]
+                # ตัวอย่าง: bulk-delete PROD001,PROD002,PROD003
+                self._handle_bulk_delete(event, text[12:].strip())
+                return
+            
+            if text.lower().startswith("top-products ") and user_id == config.ADMIN_USER_ID:
+                # คำสั่ง: top-products [metric] [limit]
+                # ตัวอย่าง: top-products sold_count 5
+                self._handle_top_products(event, text[13:].strip())
+                return
+            
             if text.lower().startswith("หมวด "):
                 category_name = text[5:].strip()
                 self._browse_category(event, category_name, user_id)
@@ -141,6 +159,7 @@ class AffiliateLineHandler:
             QuickReplyItem(action=MessageAction(label="❌ ลบสินค้า", text="❌ ลบสินค้า")),
             QuickReplyItem(action=MessageAction(label="📋 ดูสินค้าทั้งหมด", text="📋 ดูสินค้าทั้งหมด")),
             QuickReplyItem(action=MessageAction(label="📊 สถิติ", text="📊 สถิติ")),
+            QuickReplyItem(action=MessageAction(label="🎛️ Dashboard", text="🎛️ Dashboard")),
         ])
         
         self.line_bot_api.reply_message(
@@ -193,6 +212,9 @@ class AffiliateLineHandler:
             
         elif text == "📊 สถิติ":
             self._show_admin_stats(event, user_id)
+            
+        elif text == "🎛️ Dashboard":
+            self._show_admin_dashboard(event, user_id)
             
         else:
             self._reply_text(event, "❓ คำสั่งไม่ถูกต้อง กรุณาเลือกจากเมนู")
@@ -1350,6 +1372,258 @@ class AffiliateLineHandler:
         except Exception as e:
             print(f"[ERROR] Error showing category stats: {e}")
             self._reply_text(event, "❌ เกิดข้อผิดพลาดในการแสดงสถิติหมวดหมู่")
+    
+    def _show_admin_dashboard(self, event, user_id: str):
+        """แสดง Admin Dashboard แบบครอบคลุม"""
+        try:
+            # ดึงข้อมูลสถิติทั้งหมด
+            stats = self.db.get_stats()
+            categories_stats = self.db.get_categories_with_stats()
+            price_range = self.db.get_price_range()
+            
+            # คำนวณสถิติเพิ่มเติม
+            total_products = stats.get('total_products', 0)
+            total_searches = stats.get('total_searches', 0)
+            avg_price = stats.get('average_price', 0)
+            
+            # หมวดหมู่ยอดนิยม
+            hot_categories = [cat for cat in categories_stats if cat['popularity_score'] >= 50]
+            
+            # สินค้าที่ขายดีที่สุด (จำลอง - ต้องการ query พิเศษ)
+            top_products = self.db.search_products("", limit=3, order_by='popularity')['products']
+            
+            dashboard_text = "🎛️ **Admin Dashboard - ภาพรวมระบบ**\n\n"
+            
+            # สถิติหลัก
+            dashboard_text += "📊 **สถิติหลัก**:\n"
+            dashboard_text += f"• 🛍️ สินค้าทั้งหมด: **{total_products:,}** รายการ\n"
+            dashboard_text += f"• 🔍 การค้นหา: **{total_searches:,}** ครั้ง\n"
+            dashboard_text += f"• 💰 ราคาเฉลี่ย: **{avg_price:,.0f}** บาท\n"
+            dashboard_text += f"• 📂 หมวดหมู่: **{len(categories_stats)}** หมวด\n\n"
+            
+            # ช่วงราคา
+            dashboard_text += "💳 **ช่วงราคาสินค้า**:\n"
+            dashboard_text += f"• ราคาต่ำสุด: **{price_range['min_price']:,.0f}** บาท\n"
+            dashboard_text += f"• ราคาสูงสุด: **{price_range['max_price']:,.0f}** บาท\n\n"
+            
+            # หมวดหมู่ฮิต
+            if hot_categories:
+                dashboard_text += "🔥 **หมวดหมู่ฮิต** (Top 3):\n"
+                for i, cat in enumerate(hot_categories[:3], 1):
+                    dashboard_text += f"{i}. **{cat['name']}** - คะแนน {cat['popularity_score']}\n"
+                    dashboard_text += f"   📦 {cat['product_count']} รายการ | 🔥 {cat['total_sold']:,} ขาย\n"
+                dashboard_text += "\n"
+            
+            # สินค้าขายดี
+            if top_products:
+                dashboard_text += "⭐ **สินค้าขายดี** (Top 3):\n"
+                for i, product in enumerate(top_products[:3], 1):
+                    name = product['product_name'][:30] + "..." if len(product['product_name']) > 30 else product['product_name']
+                    dashboard_text += f"{i}. {name}\n"
+                    dashboard_text += f"   💰 {product['price']:,.0f}฿ | 🔥 {product.get('sold_count', 0):,} ขาย\n"
+                dashboard_text += "\n"
+            
+            # ประสิทธิภาพระบบ
+            dashboard_text += "⚡ **ประสิทธิภาพระบบ**:\n"
+            
+            # คำนวณ search rate
+            search_rate = total_searches / max(total_products, 1)
+            dashboard_text += f"• อัตราการค้นหา: **{search_rate:.2f}** ครั้ง/สินค้า\n"
+            
+            # คำนวณ conversion rate (จำลอง)
+            conversion_rate = min((total_searches / max(total_products * 10, 1)) * 100, 100)
+            dashboard_text += f"• อัตราการใช้งาน: **{conversion_rate:.1f}%**\n\n"
+            
+            # คำแนะนำ
+            dashboard_text += "💡 **คำแนะนำเชิงข้อมูล**:\n"
+            
+            if len(hot_categories) == 0:
+                dashboard_text += "• ⚠️ ไม่มีหมวดหมู่ฮิต - ควรเพิ่มสินค้าในหมวดหมู่ยอดนิยม\n"
+            elif len(hot_categories) >= 3:
+                dashboard_text += "• ✅ มีหมวดหมู่ฮิตหลากหลาย - ระบบมีความสมดุลดี\n"
+            
+            if total_products < 100:
+                dashboard_text += "• 📈 ควรเพิ่มสินค้าให้ถึง 100+ รายการเพื่อความหนาแน่น\n"
+            elif total_products >= 1000:
+                dashboard_text += "• 🎉 สินค้าครบ 1000+ รายการ - ระดับ Enterprise!\n"
+            
+            if search_rate < 0.1:
+                dashboard_text += "• 🔍 อัตราการค้นหาต่ำ - ควร optimize SEO ของสินค้า\n"
+            elif search_rate > 2.0:
+                dashboard_text += "• 🔥 อัตราการค้นหาสูง - ระบบได้รับความนิยมดี!\n"
+            
+            dashboard_text += "\n---\n"
+            dashboard_text += "🎯 **การดำเนินการด่วน**:\n"
+            dashboard_text += "• พิมพ์ 'สถิติหมวดหมู่' - ดูสถิติหมวดหมู่ละเอียด\n"
+            dashboard_text += "• พิมพ์ 'หมวดหมู่' - ตรวจสอบ Smart Grouping\n"
+            dashboard_text += "• พิมพ์ 'สถิติ' - ดูสถิติพื้นฐาน"
+            
+            self._reply_text(event, dashboard_text)
+            del self.admin_state[user_id]
+            
+        except Exception as e:
+            print(f"[ERROR] Error showing admin dashboard: {e}")
+            self._reply_text(event, "❌ เกิดข้อผิดพลาดในการแสดง Dashboard")
+    
+    def _handle_bulk_update(self, event, command: str):
+        """จัดการคำสั่ง bulk update - สำหรับ Admin เท่านั้น"""
+        try:
+            # แยกคำสั่ง: codes field=value
+            parts = command.split(' ', 1)
+            if len(parts) != 2:
+                self._reply_text(event, "❌ รูปแบบคำสั่งไม่ถูกต้อง\n💡 ใช้: bulk-update [codes] [field]=[value]\n🔸 ตัวอย่าง: bulk-update PROD001,PROD002 commission_rate=15")
+                return
+            
+            codes_str = parts[0]
+            field_value = parts[1]
+            
+            # แยก field=value
+            if '=' not in field_value:
+                self._reply_text(event, "❌ รูปแบบ field=value ไม่ถูกต้อง\n💡 ตัวอย่าง: commission_rate=15 หรือ category=ใหม่")
+                return
+            
+            field, value = field_value.split('=', 1)
+            
+            # แยก product codes
+            product_codes = [code.strip().upper() for code in codes_str.split(',')]
+            
+            # สร้าง update data
+            update_data = {}
+            
+            # แปลงค่าตามประเภท field
+            if field in ['price', 'commission_rate', 'rating']:
+                try:
+                    update_data[field] = float(value)
+                except ValueError:
+                    self._reply_text(event, f"❌ ค่า {field} ต้องเป็นตัวเลข")
+                    return
+            elif field in ['sold_count']:
+                try:
+                    update_data[field] = int(value)
+                except ValueError:
+                    self._reply_text(event, f"❌ ค่า {field} ต้องเป็นจำนวนเต็ม")
+                    return
+            else:
+                # String fields
+                update_data[field] = value
+            
+            # ดำเนินการ bulk update
+            result = self.db.bulk_update_products(product_codes, update_data)
+            
+            if result['success']:
+                response = f"✅ **Bulk Update สำเร็จ!**\n\n"
+                response += f"📊 อัปเดตสำเร็จ: **{result['updated_count']}** รายการ\n"
+                response += f"🔧 Field: **{field}** = **{value}**\n\n"
+                response += f"📝 รายการที่อัปเดต:\n"
+                for code in product_codes[:10]:  # แสดงแค่ 10 รายการแรก
+                    response += f"• {code}\n"
+                
+                if len(product_codes) > 10:
+                    response += f"... และอีก {len(product_codes) - 10} รายการ"
+                
+                self._reply_text(event, response)
+            else:
+                self._reply_text(event, f"❌ Bulk Update ล้มเหลว: {result['message']}")
+                
+        except Exception as e:
+            print(f"[ERROR] Bulk update error: {e}")
+            self._reply_text(event, "❌ เกิดข้อผิดพลาดในการ Bulk Update")
+    
+    def _handle_bulk_delete(self, event, codes_str: str):
+        """จัดการคำสั่ง bulk delete - สำหรับ Admin เท่านั้น"""
+        try:
+            # แยก product codes
+            product_codes = [code.strip().upper() for code in codes_str.split(',')]
+            
+            if len(product_codes) == 0:
+                self._reply_text(event, "❌ กรุณาระบุรหัสสินค้าที่ต้องการลบ\n💡 ตัวอย่าง: bulk-delete PROD001,PROD002")
+                return
+            
+            # ยืนยันการลบ (เพื่อความปลอดภัย)
+            if len(product_codes) > 5:
+                self._reply_text(event, f"⚠️ **คำเตือน: กำลังลบ {len(product_codes)} รายการ**\n\nเพื่อความปลอดภัย กรุณาลบทีละไม่เกิน 5 รายการ\nหรือใช้คำสั่ง: bulk-delete {','.join(product_codes[:5])}")
+                return
+            
+            # ดำเนินการ bulk delete
+            result = self.db.bulk_delete_products(product_codes)
+            
+            if result['success']:
+                response = f"✅ **Bulk Delete สำเร็จ!**\n\n"
+                response += f"🗑️ ลบสำเร็จ: **{result['deleted_count']}** รายการ\n\n"
+                response += f"📝 รายการที่ลบ:\n"
+                for code in product_codes:
+                    response += f"• {code}\n"
+                
+                self._reply_text(event, response)
+            else:
+                self._reply_text(event, f"❌ Bulk Delete ล้มเหลว: {result['message']}")
+                
+        except Exception as e:
+            print(f"[ERROR] Bulk delete error: {e}")
+            self._reply_text(event, "❌ เกิดข้อผิดพลาดในการ Bulk Delete")
+    
+    def _handle_top_products(self, event, command: str):
+        """จัดการคำสั่งแสดงสินค้าอันดับสูง - สำหรับ Admin เท่านั้น"""
+        try:
+            parts = command.split()
+            
+            # ค่าเริ่มต้น
+            metric = 'sold_count'
+            limit = 5
+            
+            if len(parts) >= 1:
+                metric = parts[0]
+            if len(parts) >= 2:
+                try:
+                    limit = int(parts[1])
+                    limit = min(limit, 20)  # จำกัดไม่เกิน 20
+                except ValueError:
+                    limit = 5
+            
+            # ดึงข้อมูล
+            top_products = self.db.get_top_products_by_metric(metric, limit)
+            
+            if not top_products:
+                self._reply_text(event, f"❌ ไม่พบข้อมูลสินค้าสำหรับ metric: {metric}")
+                return
+            
+            # สร้างข้อความแสดงผล
+            metric_names = {
+                'sold_count': 'ยอดขาย',
+                'price': 'ราคา',
+                'rating': 'คะแนน',
+                'commission_amount': 'ค่าคอมมิชชั่น'
+            }
+            
+            metric_display = metric_names.get(metric, metric)
+            response = f"🏆 **Top {limit} สินค้า - เรียงตาม{metric_display}**\n\n"
+            
+            for i, product in enumerate(top_products, 1):
+                name = product['product_name'][:25] + "..." if len(product['product_name']) > 25 else product['product_name']
+                code = product['product_code']
+                
+                response += f"{i}. **{name}**\n"
+                response += f"   🔑 {code} | 💰 {product['price']:,.0f}฿\n"
+                
+                if metric == 'sold_count':
+                    response += f"   🔥 ขาย: {product.get('sold_count', 0):,} ชิ้น\n"
+                elif metric == 'rating':
+                    response += f"   ⭐ คะแนน: {product.get('rating', 0):.1f}/5.0\n"
+                elif metric == 'commission_amount':
+                    response += f"   💸 คอมมิชชั่น: {product.get('commission_amount', 0):,.0f}฿\n"
+                
+                response += "\n"
+            
+            response += f"💡 **คำสั่งอื่นๆ**:\n"
+            response += f"• top-products sold_count 10 - ขายดี 10 อันดับ\n"
+            response += f"• top-products price 5 - ราคาสูง 5 อันดับ\n"
+            response += f"• top-products rating 3 - คะแนนสูง 3 อันดับ"
+            
+            self._reply_text(event, response)
+            
+        except Exception as e:
+            print(f"[ERROR] Top products error: {e}")
+            self._reply_text(event, "❌ เกิดข้อผิดพลาดในการแสดงสินค้าอันดับสูง")
     
     def _reply_text(self, event, text: str):
         """ส่งข้อความตอบกลับ"""
