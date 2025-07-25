@@ -499,18 +499,38 @@ class AffiliateLineHandler:
         )
     
     def _send_products_list(self, event, products: List[Dict], query: str):
-        """ส่งรายการสินค้าหลายรายการ"""
-        products_text = f"🔍 ผลการค้นหา '{query}' ({len(products)} รายการ):\n\n"
+        """ส่งรายการสินค้าหลายรายการแบบโซเชียลมีเดีย"""
+        products_text = f"🔍 เจอสินค้าดีๆ เกี่ยวกับ '{query}' มาแชร์ให้:\n\n"
         
         for i, product in enumerate(products, 1):
-            commission = (product['price'] * product['commission_rate']) / 100
-            products_text += (
-                f"{i}. {product['product_name']}\n"
-                f"   💰 {product['price']:,.0f}฿ | 💸 {commission:,.0f}฿ ({product['commission_rate']}%)\n"
-                f"   🏪 {product['shop_name']}\n\n"
-            )
+            # ย่อชื่อสินค้า
+            name = self._shorten_product_name(product['product_name'])
+            price = product['price']
+            sold_count = product.get('sold_count', 0)
+            shop_name = product['shop_name']
+            offer_link = product['offer_link']
+            rating = product.get('rating', 0)
+            
+            # แปลงจำนวนขาย
+            sold_display = self._format_sold_count(sold_count)
+            
+            products_text += f"🔸 {name}\n"
+            products_text += f"💸 ราคาเพียง {price:,.0f} บาท!\n"
+            
+            if sold_count >= 1000:
+                products_text += f"📦 ขายดีมากกว่า {sold_display} ชิ้น\n"
+            elif sold_count > 0:
+                products_text += f"📦 ขายแล้ว {sold_display} ชิ้น\n"
+                
+            if rating >= 4.0:
+                stars = "⭐" * min(int(rating), 5)
+                products_text += f"⭐ คะแนน {rating} {stars}\n"
+                
+            products_text += f"🏪 ร้าน {shop_name}\n"
+            products_text += f"🛒 สั่งได้ที่ Shopee 👉 {offer_link}\n\n"
+            products_text += "="*25 + "\n\n"
         
-        products_text += "💡 ค้นหาเพิ่มเติมด้วยชื่อสินค้าที่เจาะจงมากขึ้น"
+        products_text += "💡 เจอของดี copy ลิงก์ไปสั่งได้เลย!"
         
         self._reply_text(event, products_text)
     
