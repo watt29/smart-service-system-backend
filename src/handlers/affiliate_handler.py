@@ -260,8 +260,8 @@ class AffiliateLineHandler:
             
             if products:
                 if len(products) == 1:
-                    # แสดงสินค้าเดียวแบบ Flex Message
-                    self._send_product_flex(event, products[0])
+                    # แสดงสินค้าเดียวแบบข้อความธรรมดา
+                    self._send_product_simple(event, products[0])
                 else:
                     # แสดงรายการสินค้าหลายรายการ
                     self._send_products_list(event, products, query)
@@ -279,7 +279,7 @@ class AffiliateLineHandler:
         print(f"[DEBUG] Product found: {product is not None}")
         
         if product:
-            self._send_product_flex(event, product)
+            self._send_product_simple(event, product)
         else:
             self._reply_text(event, f"❌ ไม่พบสินค้ารหัส '{product_code}'\n💡 ลองค้นหาด้วยชื่อสินค้าแทน")
     
@@ -302,6 +302,64 @@ class AffiliateLineHandler:
             self._reply_text(event, response)
         else:
             self._reply_text(event, f"❌ ไม่พบสินค้ารหัส '{product_code}'\n💡 ลองใช้คำสั่ง 'รหัส {product_code}' เพื่อดูสินค้าก่อน")
+    
+    def _send_product_simple(self, event, product: Dict):
+        """ส่งข้อความแสดงสินค้าแบบธรรมดา"""
+        # ย่อชื่อสินค้าให้อ่านง่าย
+        name = self._shorten_product_name(product['product_name'])
+        price = product['price']
+        sold_count = product.get('sold_count', 0)
+        shop_name = product['shop_name']
+        offer_link = product['offer_link']
+        rating = product.get('rating', 0)
+        
+        # แปลงจำนวนขาย
+        sold_display = self._format_sold_count(sold_count)
+        
+        # สร้างข้อความ
+        message = f"🔸 {name}\n"
+        message += f"💸 ราคาเพียง {price:,.0f} บาท!\n"
+        
+        if sold_count >= 1000:
+            message += f"📦 ขายดีมากกว่า {sold_display} ชิ้น\n"
+        elif sold_count > 0:
+            message += f"📦 ขายแล้ว {sold_display} ชิ้น\n"
+            
+        if rating >= 4.0:
+            stars = "⭐" * min(int(rating), 5)
+            message += f"⭐ คะแนน {rating} {stars}\n"
+            
+        message += f"🏪 ร้าน {shop_name}\n"
+        message += f"🛒 สั่งได้ที่ Shopee 👉 {offer_link}"
+        
+        self._reply_text(event, message)
+    
+    def _shorten_product_name(self, name: str) -> str:
+        """ย่อชื่อสินค้าให้อ่านง่าย"""
+        if len(name) <= 50:
+            return name
+            
+        # ลบข้อความที่ไม่จำเป็น
+        name = name.replace('【', '').replace('】', '')
+        name = name.replace('✨', '').replace('🔥', '')
+        
+        # แยกคำและเลือกคำสำคัญ
+        words = name.split()
+        if len(words) <= 8:
+            return name
+            
+        # เก็บคำสำคัญด้านหน้า
+        important_words = words[:6]
+        return ' '.join(important_words) + '...'
+    
+    def _format_sold_count(self, count: int) -> str:
+        """แปลงจำนวนขายให้อ่านง่าย"""
+        if count >= 10000:
+            return f"{count//1000}k+"
+        elif count >= 1000:
+            return f"{count//100}00+"
+        else:
+            return str(count)
     
     def _send_product_flex(self, event, product: Dict):
         """ส่ง Flex Message แสดงรายละเอียดสินค้า"""
