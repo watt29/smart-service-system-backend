@@ -1,418 +1,232 @@
+"""
+Smart Service System - Main Application
+ระบบช่วยเหลือข้าราชการไทยเรื่องสิทธิเบิกค่ารักษาพยาบาล
+"""
+
 from flask import Flask, request, abort, render_template, jsonify
-
-print("Starting Flask application...")
-import re
-import os
-import json # Added import for json module
-import requests # Added import for requests
-from dotenv import load_dotenv # Import load_dotenv
-
-from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
-from linebot.v3.webhook import WebhookHandler
 from linebot.exceptions import InvalidSignatureError
-from linebot.v3.webhooks import MessageEvent
-from linebot.v3.webhooks import TextMessageContent
-from linebot.v3.messaging import QuickReply, QuickReplyItem, MessageAction
-import traceback # Added import for traceback
 
+# Import modules ใหม่ที่เราสร้าง
+from src.config import config
+from src.utils.db_adapter import db_adapter
+from src.handlers.line_handler import line_handler
+from src.utils.logger import system_logger, error_handler
+from src.utils.ai_search import ai_search
+
+# ตั้งค่า Flask App
 app = Flask(__name__)
+app.config['SECRET_KEY'] = config.SECRET_KEY
 
-# Load environment variables from .env file
-load_dotenv()
+def create_app():
+    """สร้างและตั้งค่า Flask application"""
+    system_logger.info("เริ่มต้น Smart Service System...")
+    
+    # ตรวจสอบการตั้งค่า
+    config_valid = config.validate_config()
+    if not config_valid:
+        system_logger.warning("การตั้งค่าไม่ครบถ้วน - ระบบจะทำงานในโหมดจำกัด")
+    
+    # แสดงสถิติฐานข้อมูล
+    summary = db_adapter.get_summary()
+    db_type = "SQLite" if config.USE_SQLITE else "JSON"
+    system_logger.info(f"ฐานข้อมูล ({db_type}): {summary['total_items']} รายการ, อัตราเฉลี่ย {summary['average_rate']:.2f} บาท")
+    
+    return app
 
-# --- LINE Bot API Configuration ---
-CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
-CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
+# ===== Flask Routes =====
 
-# Initialize LineBotApi and WebhookHandler only if tokens are available
-if CHANNEL_ACCESS_TOKEN and CHANNEL_SECRET:
-    configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
-    line_bot_api = MessagingApi(ApiClient(configuration))
-    handler = WebhookHandler(CHANNEL_SECRET)
-else:
-    print("Warning: LINE_CHANNEL_ACCESS_TOKEN or LINE_CHANNEL_SECRET not found. LINE Bot functionality will be limited.")
-    # Create dummy objects to prevent errors if LINE tokens are missing
-    class DummyLineBotApi:
-        def reply_message(self, *args, **kwargs): pass
-    class DummyWebhookHandler:
-        def handle(self, *args, **kwargs): pass
-        def add(self, *args, **kwargs): return lambda f: f # Return a decorator that does nothing
+@app.route('/')
+def home():
+    """หน้าแรกของเว็บไซต์"""
+    return render_template('index.html')
 
-    line_bot_api = DummyLineBotApi()
-    handler = DummyWebhookHandler()
+@app.route('/health')
+def health_check():
+    """ตรวจสอบสถานะระบบ"""
+    return jsonify({
+        "status": "healthy",
+        "database_items": len(db_adapter.get_all_items()),
+        "database_type": "SQLite" if config.USE_SQLITE else "JSON",
+        "line_bot_active": config.LINE_CHANNEL_ACCESS_TOKEN is not None
+    })
 
-# --- Knowledge Base Management ---
-KNOWLEDGE_BASE_FILE = 'knowledge_base.json'
-KNOWLEDGE_BASE = {}
+@app.route('/search', methods=['GET'])
+def search_api():
+    """API สำหรับค้นหาข้อมูล"""
+    try:
+        query = request.args.get('query', '').strip()
+        system_logger.info(f"API search request: '{query}'")
+        
+        if not query:
+            error_result = error_handler.handle_validation_error("query", "empty")
+            return jsonify({"error": "กรุณาระบุคำค้นหา"}), 400
+        
+        # ค้นหาในฐานข้อมูล
+        found_items = db_adapter.fuzzy_search(query)
+        
+        if found_items:
+            key, item_data = found_items[0]
+            result_html = format_web_result(item_data, query)
+            system_logger.info(f"Search successful: found '{key}' for query '{query}'")
+            return jsonify({"success": True, "result": result_html})
+        else:
+            # สร้างลิงก์สำหรับค้นหาในเว็บทางการ
+            cgd_link = f"{config.CGD_BASE_URL}?method=search&service_name={query.replace(' ', '+')}"
+            not_found_html = (
+                f"❌ ไม่พบข้อมูล '{query}' ในระบบฐานความรู้ภายใน<br><br>"
+                f"คุณสามารถค้นหาข้อมูลที่เป็นทางการและล่าสุดได้ที่:<br>"
+                f"<a href='{cgd_link}' target='_blank'>คลิกเพื่อค้นหา '{query}' ใน mbdb.cgd.go.th</a>"
+            )
+            system_logger.info(f"Search not found: '{query}'")
+            return jsonify({"success": False, "result": not_found_html})
+            
+    except Exception as e:
+        error_result = error_handler.handle_api_error("/search", e)
+        return jsonify(error_result), 500
 
-def load_knowledge_base():
-    global KNOWLEDGE_BASE
-    if os.path.exists(KNOWLEDGE_BASE_FILE):
-        with open(KNOWLEDGE_BASE_FILE, 'r', encoding='utf-8') as f:
-            try:
-                KNOWLEDGE_BASE = json.load(f)
-            except json.JSONDecodeError:
-                print(f"Warning: {KNOWLEDGE_BASE_FILE} is empty or corrupted. Initializing with empty knowledge base.")
-                KNOWLEDGE_BASE = {}
-    else:
-        print(f"Info: {KNOWLEDGE_BASE_FILE} not found. Initializing with empty knowledge base.")
-        KNOWLEDGE_BASE = {}
+@app.route("/callback", methods=['POST'])
+def line_callback():
+    """Webhook สำหรับรับข้อความจาก LINE - เน้นความเร็ว"""
+    try:
+        signature = request.headers.get('X-Line-Signature', '')
+        body = request.get_data(as_text=True)
+        
+        # ลด logging ใน production เพื่อความเร็ว
+        if config.DEBUG:
+            system_logger.debug(f"LINE webhook received: signature={signature[:10]}...")
+        
+        # ประมวลผล webhook - ต้องเร็ว!
+        line_handler.handler.handle(body, signature)
+        
+        if config.DEBUG:
+            system_logger.info("LINE webhook processed successfully")
+        
+        return 'OK'
+        
+    except InvalidSignatureError:
+        if config.DEBUG:
+            system_logger.error("Invalid LINE signature")
+        abort(400)
+        
+    except Exception as e:
+        system_logger.error(f"LINE webhook error: {str(e)}")
+        abort(500)
 
-def save_knowledge_base():
-    with open(KNOWLEDGE_BASE_FILE, 'w', encoding='utf-8') as f:
-        json.dump(KNOWLEDGE_BASE, f, ensure_ascii=False, indent=4)
+@app.route('/search/ai', methods=['GET'])
+def ai_search_api():
+    """API สำหรับค้นหาด้วย AI"""
+    try:
+        query = request.args.get('query', '').strip()
+        system_logger.info(f"AI search request: '{query}'")
+        
+        if not query:
+            return jsonify({"error": "กรุณาระบุคำค้นหา"}), 400
+        
+        # ดึงข้อมูลทั้งหมด
+        all_items = db_adapter.get_all_items()
+        items_list = [(k, v) for k, v in all_items.items()]
+        
+        # ค้นหาด้วย AI
+        ai_results = ai_search.enhanced_search(query, items_list, limit=5)
+        
+        if ai_results:
+            results = []
+            for score, key, item_data in ai_results:
+                result = {
+                    "key": key,
+                    "score": round(score, 2),
+                    "data": format_web_result(item_data, query)
+                }
+                results.append(result)
+            
+            # วิเคราะห์ผลการค้นหา
+            insights = ai_search.get_search_insights(query, ai_results)
+            suggestions = ai_search.suggest_alternatives(query, items_list)
+            
+            system_logger.info(f"AI search successful: found {len(results)} results with top score {ai_results[0][0]:.2f}")
+            
+            return jsonify({
+                "success": True,
+                "results": results,
+                "insights": insights,
+                "suggestions": suggestions
+            })
+        else:
+            suggestions = ai_search.suggest_alternatives(query, items_list)
+            return jsonify({
+                "success": False,
+                "message": f"ไม่พบข้อมูล '{query}' ด้วย AI search",
+                "suggestions": suggestions
+            })
+            
+    except Exception as e:
+        error_result = error_handler.handle_api_error("/search/ai", e)
+        return jsonify(error_result), 500
 
-# Load knowledge base on startup
-load_knowledge_base()
+@app.route('/stats')
+def stats_api():
+    """API สำหรับดูสถิติระบบ"""
+    try:
+        summary = db_adapter.get_summary()
+        search_stats = db_adapter.get_search_stats(limit=10)
+        
+        stats = {
+            "database": summary,
+            "search": search_stats,
+            "system": {
+                "database_type": "SQLite" if config.USE_SQLITE else "JSON",
+                "debug_mode": config.DEBUG,
+                "line_bot_active": config.LINE_CHANNEL_ACCESS_TOKEN is not None
+            }
+        }
+        
+        system_logger.info("Stats API accessed")
+        return jsonify(stats)
+        
+    except Exception as e:
+        error_result = error_handler.handle_api_error("/stats", e)
+        return jsonify(error_result), 500
 
-# --- Admin State Management (Simplified) ---
-# In a real system, this would be persistent storage (e.g., database)
-# and handle multiple users/sessions.
-admin_state = {} # Stores current admin operation for a user_id
+# ===== Helper Functions =====
 
-# --- Helper Functions ---
-def generate_cgd_search_link(query):
-    """Generates an automatic search link to mbdb.cgd.go.th."""
-    encoded_query = re.sub(r'\\s+', '+', query.strip()) # Replace spaces with '+'
-    return f"https://mbdb.cgd.go.th/wel/searchmed.jsp?method=search&service_name={encoded_query}"
-
-def format_search_result(item_data, query):
-    """Formats the search result for display for both web and LINE."""
-    link = generate_cgd_search_link(query)
-
-    # Common data points
-    name_th = item_data['name_th']
-    name_en = item_data['name_en']
-    rate_baht = item_data['rate_baht']
-    rights = ', '.join(item_data['rights'])
-    notes = item_data.get('notes', '')
-    cpt = item_data['cpt']
-    icd10 = item_data['icd10']
-
-    # --- For Web UI (HTML) ---
-    web_html = f"""
+def format_web_result(item_data, query):
+    """จัดรูปแบบผลลัพธ์สำหรับเว็บ"""
+    cgd_link = f"{config.CGD_BASE_URL}?method=search&service_name={query.replace(' ', '+')}"
+    
+    return f"""
     <div class="card mb-3">
         <div class="card-body text-start">
-            <h5 class="card-title">🔍 รายการ: {name_th} ({name_en})</h5>
+            <h5 class="card-title">🔍 รายการ: {item_data['name_th']} ({item_data['name_en']})</h5>
             <p class="card-text">
-                💵 อัตรา: <strong>{rate_baht:.2f} บาท</strong><br>
-                ✅ เบิกได้ตามสิทธิ: {rights}<br>
-                {f"📝 หมายเหตุ: {notes}<br>" if notes else ""}
+                💵 อัตรา: <strong>{item_data['rate_baht']:.2f} บาท</strong><br>
+                ✅ เบิกได้ตามสิทธิ: {', '.join(item_data['rights'])}<br>
+                {f"📝 หมายเหตุ: {item_data['notes']}<br>" if item_data.get('notes') else ""}
             </p>
             <p class="card-text">
                 ℹ️ รหัสมาตรฐาน:<br>
-                - CPT: {cpt}<br>
-                - ICD-10: {icd10}
+                - CPT: {item_data['cpt']}<br>
+                - ICD-10: {item_data['icd10']}
             </p>
-            <a href="{link}" target="_blank" class="btn btn-sm btn-outline-primary mt-2">
+            <a href="{cgd_link}" target="_blank" class="btn btn-sm btn-outline-primary mt-2">
                 🔗 ดูข้อมูลทางการใน mbdb.cgd.go.th
             </a>
         </div>
     </div>
     """
 
-    # --- For LINE Bot (Plain Text with Emojis) ---
-    line_text = f"""
-🔍 รายการ: {name_th} ({name_en})
-💵 อัตรา: {rate_baht:.2f} บาท
-✅ เบิกได้ตามสิทธิ: {rights}
-{f"📝 หมายเหตุ: {notes}\n" if notes else ""}🔗 ดูข้อมูลทางการ:
-{link}
-ℹ️ รหัสมาตรฐาน:
-- CPT: {cpt}
-- ICD-10: {icd10}
-    """
-    # Remove leading/trailing newlines and extra spaces
-    line_text = line_text.strip()
+# ===== Application Startup =====
 
-    return {"web": web_html, "line": line_text}
-
-def fuzzy_search_knowledge_base(query):
-    """Performs a fuzzy search on the knowledge base."""
-    query_lower = query.lower()
-    found_items = []
-    for key, item in KNOWLEDGE_BASE.items():
-        if query_lower in key.lower() or \
-           query_lower in item['name_th'].lower() or \
-           query_lower in item['name_en'].lower() or \
-           query_lower in item['cgd_code'].lower() or \
-           query_lower in item['cpt'].lower() or \
-           query_lower in item['icd10'].lower():
-            found_items.append((key, item))
-    return found_items
-
-def fetch_web_content(url):
-    """Fetches content from a given URL using requests."""
-    try:
-        response = requests.get(url, timeout=10) # 10 second timeout
-        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
-        return f"เนื้อหาจาก {url}:\n\n{response.text[:1000]}..." # Return first 1000 chars
-    except requests.exceptions.RequestException as e:
-        return f"ไม่สามารถดึงข้อมูลจาก {url} ได้: {e}"
-
-# --- Flask Routes ---
-
-@app.route('/')
-def home():
-    """Renders the main HTML page."""
-    return render_template('index.html')
-
-@app.route('/search', methods=['GET'])
-def search_api():
-    """API endpoint for searching the knowledge base."""
-    query = request.args.get('query', '').strip()
-    if not query:
-        return jsonify({"error": "กรุณาระบุคำค้นหา"}), 400
-
-    found_items = fuzzy_search_knowledge_base(query)
-
-    if found_items:
-        # For simplicity, return the first match for now
-        # In a real scenario, you might return multiple matches or ask for clarification
-        key, item_data = found_items[0]
-        formatted_result = format_search_result(item_data, query)
-        return jsonify({"success": True, "result": formatted_result["web"]})
-    else:
-        link = generate_cgd_search_link(query)
-        not_found_message = (
-            f"❌ ไม่พบข้อมูล \\\"{query}\\\" ในระบบฐานความรู้ภายใน\\n\\n"
-            f"คุณสามารถค้นหาข้อมูลที่เป็นทางการและล่าสุดได้ที่:\\n"
-            f"<a href=\\\"{link}\\\" target=\\\"_blank\\\">คลิกเพื่อค้นหา \\\"{query}\\\" ใน mbdb.cgd.go.th</a>"
-        )
-        return jsonify({"success": False, "result": not_found_message})
-
-# --- LINE Bot Webhook (Basic structure) ---
-@app.route("/callback", methods=['POST'])
-def callback():
-    signature = request.headers['X-Line-Signature']
-    body = request.get_data(as_text=True)
-    app.logger.info("Request body: " + body)
-
-    try:
-        handler.handle(body, signature)
-    except InvalidSignatureError:
-        abort(400)
-    return 'OK'
-
-@handler.add(MessageEvent, message=TextMessage)
-def handle_message(event):
-    user_id = event.source.user.id
-    text = event.message.text.lower().strip()
-
-    try:
-        # --- Admin System Entry Point ---
-        if text in ["admin", "แอดมิน", "เมนูแอดมิน"]:
-            admin_state[user_id] = {"mode": "main_menu"}
-            quick_replies = QuickReply(items=[
-                QuickReplyItem(action=MessageAction(label="➕ เพิ่มข้อมูล", text="➕ เพิ่มข้อมูล")),
-                QuickReplyItem(action=MessageAction(label="✏️ แก้ไขข้อมูล", text="✏️ แก้ไขข้อมูล")),
-                QuickReplyItem(action=MessageAction(label="❌ ลบข้อมูล", text="❌ ลบข้อมูล")),
-                QuickReplyItem(action=MessageAction(label="📋 ดูทั้งหมด", text="📋 ดูทั้งหมด")),
-            ])
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text="เลือกเมนูแอดมิน:", quick_reply=quick_replies)]
-                )
-            )
-            return
-
-        # --- Handle Admin Flow (Simplified - actual implementation would be more complex) ---
-        if user_id in admin_state:
-            current_mode = admin_state[user_id].get("mode")
-
-            if text == "cancel":
-                del admin_state[user_id]
-                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ยกเลิกการดำเนินการแอดมินแล้ว")]))
-                return
-
-            if current_mode == "main_menu":
-                if text == "➕ เพิ่มข้อมูล":
-                    admin_state[user_id] = {"mode": "add_item_start", "data": {}}
-                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="กรุณาป้อนรหัสรายการ (เช่น CBC, 31001):")]))
-                    return
-                elif text == "✏️ แก้ไขข้อมูล":
-                    admin_state[user_id] = {"mode": "edit_item_start"}
-                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="กรุณาป้อนรหัสรายการที่ต้องการแก้ไข:")]))
-                    return
-                elif text == "❌ ลบข้อมูล":
-                    admin_state[user_id] = {"mode": "delete_item_start"}
-                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="กรุณาป้อนรหัสรายการที่ต้องการลบ:")]))
-                    return
-                elif text == "📋 ดูทั้งหมด":
-                    admin_state[user_id] = {"mode": "list_all"}
-                    if KNOWLEDGE_BASE:
-                        all_items = "\n\n".join([f"รหัส: {key}\nชื่อ: {item['name_th']}" for key, item in KNOWLEDGE_BASE.items()])
-                        line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=f"รายการทั้งหมด:\n{all_items}")]))
-                    else:
-                        line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ยังไม่มีข้อมูลในระบบ")]))
-                    del admin_state[user_id] # Exit admin mode after listing
-                    return
-                else:
-                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="คำสั่งไม่ถูกต้อง กรุณาเลือกจากเมนู")]))
-                    return
-            
-            # --- Add Item Flow (Simplified) ---
-            if current_mode == "add_item_start":
-                admin_state[user_id]["data"]["key"] = text.lower()
-                admin_state[user_id]["mode"] = "add_item_name_th"
-                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ป้อนชื่อรายการภาษาไทย:")]))
-                return
-            if current_mode == "add_item_name_th":
-                admin_state[user_id]["data"]["name_th"] = text
-                admin_state[user_id]["mode"] = "add_item_name_en"
-                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ป้อนชื่อรายการภาษาอังกฤษ:")]))
-                return
-            if current_mode == "add_item_name_en":
-                admin_state[user_id]["data"]["name_en"] = text
-                admin_state[user_id]["mode"] = "add_item_rate"
-                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ป้อนอัตราค่าบริการ (ตัวเลข):")]))
-                return
-            if current_mode == "add_item_rate":
-                try:
-                    admin_state[user_id]["data"]["rate_baht"] = float(text)
-                    admin_state[user_id]["data"]["claimable"] = True # Default to True for simplicity
-                    admin_state[user_id]["data"]["rights"] = ["กรมบัญชีกลาง", "ทุกสิทธิ"] # Default
-                    admin_state[user_id]["data"]["cgd_code"] = "N/A"
-                    admin_state[user_id]["data"]["cpt"] = "N/A"
-                    admin_state[user_id]["data"]["icd10"] = "N/A"
-                    admin_state[user_id]["data"]["notes"] = ""
-
-                    item_key = admin_state[user_id]["data"]["key"]
-                    KNOWLEDGE_BASE[item_key] = admin_state[user_id]["data"]
-                    save_knowledge_base() # Save after adding
-                    
-                    summary = f"เพิ่มข้อมูลสำเร็จ:\nรหัส: {item_key}\nชื่อ: {KNOWLEDGE_BASE[item_key]['name_th']}\nอัตรา: {KNOWLEDGE_BASE[item_key]['rate_baht']}"
-                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=summary)]))
-                    del admin_state[user_id] # Exit admin mode
-                    return
-                except ValueError:
-                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="อัตราค่าบริการต้องเป็นตัวเลข กรุณาป้อนใหม่:")]))
-                    return
-
-            # --- Edit Item Flow (Simplified) ---
-            if current_mode == "edit_item_start":
-                item_key = text.lower()
-                if item_key in KNOWLEDGE_BASE:
-                    admin_state[user_id] = {"mode": "edit_item_field", "key": item_key}
-                    current_data = KNOWLEDGE_BASE[item_key]
-                    summary = f"ข้อมูลปัจจุบันของ {item_key}:\n"
-                    for k, v in current_data.items():
-                        summary += f"- {k}: {v}\n"
-                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=f"{summary}\nกรุณาป้อนชื่อฟิลด์ที่ต้องการแก้ไข (เช่น name_th, rate_baht):")]))
-                    return
-                else:
-                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ไม่พบรหัสรายการนี้ กรุณาป้อนใหม่:")]))
-                    return
-            if current_mode == "edit_item_field":
-                field_name = text.lower()
-                item_key = admin_state[user_id]["key"]
-                if field_name in KNOWLEDGE_BASE[item_key]:
-                    admin_state[user_id]["field"] = field_name
-                    admin_state[user_id]["mode"] = "edit_item_value"
-                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=f"ป้อนค่าใหม่สำหรับ {field_name}:")]))
-                    return
-                else:
-                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ไม่พบฟิลด์นี้ กรุณาป้อนชื่อฟิลด์ที่ถูกต้อง:")]))
-                    return
-            if current_mode == "edit_item_value":
-                item_key = admin_state[user_id]["key"]
-                field_name = admin_state[user_id]["field"]
-                new_value = text
-                
-                # Type conversion for rate_baht
-                if field_name == "rate_baht":
-                    try:
-                        new_value = float(new_value)
-                    except ValueError:
-                        line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ค่าอัตราต้องเป็นตัวเลข กรุณาป้อนใหม่:")]))
-                        return
-                elif field_name == "claimable":
-                    new_value = new_value.lower() == "true"
-                elif field_name == "rights":
-                    new_value = [s.strip() for s in new_value.split(',')] 
-
-                KNOWLEDGE_BASE[item_key][field_name] = new_value
-                save_knowledge_base() # Save after editing
-                summary = f"แก้ไขข้อมูลสำเร็จ:\nรหัส: {item_key}\nฟิลด์: {field_name}\nค่าใหม่: {new_value}"
-                line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=summary)]))
-                del admin_state[user_id] # Exit admin mode
-                return
-
-            # --- Delete Item Flow (Simplified) ---
-            if current_mode == "delete_item_start":
-                item_key = text.lower()
-                if item_key in KNOWLEDGE_BASE:
-                    admin_state[user_id] = {"mode": "delete_item_confirm", "key": item_key}
-                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=f"คุณต้องการลบรายการ '{KNOWLEDGE_BASE[item_key]['name_th']}' ใช่หรือไม่? (confirm/cancel)")]))
-                    return
-                else:
-                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ไม่พบรหัสรายการนี้ กรุณาป้อนใหม่:")]))
-                    return
-            if current_mode == "delete_item_confirm":
-                if text == "confirm":
-                    item_key = admin_state[user_id]["key"]
-                    del KNOWLEDGE_BASE[item_key]
-                    save_knowledge_base() # Save after deleting
-                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=f"ลบรายการ '{item_key}' สำเร็จแล้ว")]))
-                    return
-                else:
-                    line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="ยกเลิกการลบรายการ")]))
-                    return
-
-        # --- Web Fetch Command ---
-        if text.startswith("fetch "):
-            url_to_fetch = text[len("fetch "):
-].strip()
-            if url_to_fetch:
-                fetched_content = fetch_web_content(url_to_fetch)
-                line_bot_api.reply_message(
-                    ReplyMessageRequest(
-                        reply_token=event.reply_token,
-                        messages=[TextMessage(text=fetched_content)]
-                    )
-                )
-                return
-            else:
-                line_bot_api.reply_message(
-                    ReplyMessageRequest(
-                        reply_token=event.reply_token,
-                        messages=[TextMessage(text="กรุณาระบุ URL ที่ต้องการดึงข้อมูล (ตัวอย่าง: fetch https://www.example.com)")]
-                    )
-                )
-                return
-
-        # --- General Search (if not in admin mode) ---
-        found_items = fuzzy_search_knowledge_base(text)
-        if found_items:
-            # For simplicity, reply with the first match
-            key, item_data = found_items[0]
-            formatted_result = format_search_result(item_data, text)
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=formatted_result["line"])]
-                )
-            )
-        else:
-            link = generate_cgd_search_link(text)
-            not_found_message = (
-                f"❌ ไม่พบข้อมูล \"{text}\" ในระบบฐานความรู้ภายใน\n\n"
-                f"คุณสามารถค้นหาข้อมูลที่เป็นทางการและล่าสุดได้ที่:\n"
-                f"[คลิกเพื่อค้นหา \"{text}\" ใน mbdb.cgd.go.th]({link})"
-            )
-            line_bot_api.reply_message(
-                event.reply_token,
-                ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=not_found_message)])
-            )
-
-    except Exception as e:
-        app.logger.error(f"Error in handle_message: {traceback.format_exc()}")
-        line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[TextMessage(text="เกิดข้อผิดพลาดภายในระบบ กรุณาลองใหม่อีกครั้ง หรือติดต่อผู้ดูแลระบบ")]
-            )
-        )
-
-
+if __name__ == '__main__':
+    # สร้างแอปพลิเคชัน
+    app = create_app()
+    
+    # รันเซิร์ฟเวอร์
+    system_logger.info(f"เริ่มต้นเซิร์ฟเวอร์ที่ {config.HOST}:{config.PORT}")
+    system_logger.info(f"โหมด DEBUG: {config.DEBUG}")
+    system_logger.info("Smart Service System พร้อมใช้งาน!")
+    
+    app.run(
+        host=config.HOST,
+        port=config.PORT,
+        debug=config.DEBUG
+    )
