@@ -394,7 +394,7 @@ class AffiliateLineHandler:
                         "type": "button",
                         "action": {
                             "type": "uri",
-                            "label": "🛒 ซื้อเลย - รับคอมมิชชั่น",
+                            "label": "🛒 ดูสินค้า",
                             "uri": product['offer_link']
                         },
                         "style": "primary",
