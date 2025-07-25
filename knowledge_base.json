@@ -1,0 +1,117 @@
+{
+    "31001": {
+        "name_th": "การตรวจน้ำปัสสาวะทั่วไป",
+        "name_en": "Urinalysis",
+        "rate_baht": 80.0,
+        "claimable": true,
+        "rights": [
+            "กรมบัญชีกลาง",
+            "ประกันสังคม",
+            "ทุกสิทธิ"
+        ],
+        "cgd_code": "MED0301010",
+        "cpt": "81000",
+        "icd10": "R82.9",
+        "notes": "ไม่ต้องอดอาหาร"
+    },
+    "cbc": {
+        "name_th": "ตรวจความสมบูรณ์ของเม็ดเลือด",
+        "name_en": "Complete Blood Count (CBC)",
+        "rate_baht": 100.0,
+        "claimable": true,
+        "rights": [
+            "กรมบัญชีกลาง",
+            "ประกันสังคม",
+            "ทุกสิทธิ"
+        ],
+        "cgd_code": "MED0301020",
+        "cpt": "85025",
+        "icd10": "D69.6",
+        "notes": "อดอาหาร 8 ชม."
+    },
+    "hba1c": {
+        "name_th": "การตรวจน้ำตาลสะสม",
+        "name_en": "Glycated Hemoglobin (HbA1c)",
+        "rate_baht": 180.0,
+        "claimable": true,
+        "rights": [
+            "กรมบัญชีกลาง",
+            "ประกันสังคม",
+            "ทุกสิทธิ"
+        ],
+        "cgd_code": "MED0302040",
+        "cpt": "83036",
+        "icd10": "E11.9",
+        "notes": "ตรวจได้ 2 ครั้ง/ปี"
+    },
+    "glucose": {
+        "name_th": "ตรวจระดับน้ำตาลในเลือด",
+        "name_en": "Glucose (Fasting Blood Sugar)",
+        "rate_baht": 50.0,
+        "claimable": true,
+        "rights": [
+            "กรมบัญชีกลาง",
+            "ทุกสิทธิ"
+        ],
+        "cgd_code": "MED0302010",
+        "cpt": "82947",
+        "icd10": "R73.0",
+        "notes": "อดอาหาร 8-12 ชม."
+    },
+    "cholesterol": {
+        "name_th": "ตรวจไขมันคอเลสเตอรอล",
+        "name_en": "Cholesterol",
+        "rate_baht": 80.0,
+        "claimable": true,
+        "rights": [
+            "กรมบัญชีกลาง",
+            "ทุกสิทธิ"
+        ],
+        "cgd_code": "MED0303010",
+        "cpt": "82465",
+        "icd10": "E78.0",
+        "notes": "อดอาหาร 9-12 ชม."
+    },
+    "uric acid": {
+        "name_th": "ตรวจกรดยูริก",
+        "name_en": "Uric Acid",
+        "rate_baht": 70.0,
+        "claimable": true,
+        "rights": [
+            "กรมบัญชีกลาง",
+            "ทุกสิทธิ"
+        ],
+        "cgd_code": "MED0303050",
+        "cpt": "84550",
+        "icd10": "M10.9",
+        "notes": "ไม่ต้องอดอาหาร"
+    },
+    "ขูดหินน้ำลายทั้งปาก": {
+        "name_th": "ขูดหินน้ำลายทั้งปาก",
+        "name_en": "Full Mouth Scaling",
+        "rate_baht": 600.0,
+        "claimable": true,
+        "rights": [
+            "กรมบัญชีกลาง",
+            "ทุกสิทธิ"
+        ],
+        "cgd_code": "DEN0101010",
+        "cpt": "D1110",
+        "icd10": "K03.6",
+        "notes": "ทำได้ปีละ 1 ครั้ง"
+    },
+    "34103": {
+        "name_th": "โปรตีนรวมในปัสสาวะ (เชิงปริมาณ)",
+        "name_en": "Total protein, Urine random (Quantitative)",
+        "rate_baht": 40.0,
+        "claimable": true,
+        "rights": [
+            "กรมบัญชีกลาง",
+            "ทุกสิทธิ"
+        ],
+        "cgd_code": "N/A",
+        "cpt": "N/A",
+        "icd10": "N/A",
+        "notes": "ตามหนังสือกรมบัญชีกลาง ที่ กค 0416.2/ว 393 ลว. 10 ต.ค.60 มีผลใช้บังคับสำหรับการรักษา ตั้งแต่วันที่ 1 ม.ค.61 เป็นต้นไป"
+    }
+}

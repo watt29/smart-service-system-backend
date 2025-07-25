@@ -4,87 +4,55 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Smart Service System - ค้นหาสิทธิการเบิกค่ารักษาพยาบาล</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f4f7f6;
+            background-color: #eef2f6; /* Light blue-gray background */
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
             margin: 0;
-            color: #333;
+            color: #343a40; /* Darker text for better contrast */
         }
         .container {
             background-color: #ffffff;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+            padding: 35px; /* Slightly more padding */
+            border-radius: 15px; /* More rounded corners */
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15); /* Stronger, modern shadow */
             width: 100%;
-            max-width: 600px;
+            max-width: 750px; /* Slightly increased max-width */
             text-align: center;
         }
         h1 {
-            color: #0056b3;
-            margin-bottom: 25px;
-            font-size: 1.8em;
+            color: #007bff; /* Bootstrap primary blue */
+            margin-bottom: 20px; /* Reduced space below heading */
+            font-size: 2.2em; /* Larger heading */
+            font-weight: 700;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.05);
         }
-        .search-box {
-            display: flex;
-            margin-bottom: 20px;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            overflow: hidden;
+        .search-box .form-control {
+            border-top-right-radius: 0;
+            border-bottom-right-radius: 0;
         }
-        .search-box input[type="text"] {
-            flex-grow: 1;
-            padding: 12px 15px;
-            border: none;
-            outline: none;
-            font-size: 1em;
-        }
-        .search-box button {
-            background-color: #007bff;
-            color: white;
-            border: none;
-            padding: 12px 20px;
-            cursor: pointer;
-            font-size: 1em;
-            transition: background-color 0.3s ease;
-        }
-        .search-box button:hover {
-            background-color: #0056b3;
-        }
-        .quick-reply-container {
-            margin-top: 20px;
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 10px;
-        }
-        .quick-reply-button {
-            background-color: #e9ecef;
-            color: #495057;
-            border: 1px solid #ced4da;
-            padding: 8px 15px;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 0.9em;
-            transition: background-color 0.3s ease, color 0.3s ease;
-        }
-        .quick-reply-button:hover {
-            background-color: #007bff;
-            color: white;
+        .search-box .btn {
+            border-top-left-radius: 0;
+            border-bottom-left-radius: 0;
         }
         .result-box {
-            background-color: #eaf4f4;
-            border: 1px solid #cce7e7;
-            border-radius: 8px;
-            padding: 20px;
-            margin-top: 30px;
+            background-color: #f8f9fa; /* Lighter background for result box */
+            border: 1px solid #dee2e6; /* Lighter border */
+            border-radius: 10px; /* Rounded corners for result box */
+            padding: 25px; /* More padding */
+            margin-top: 20px; /* Reduced space above result box */
             text-align: left;
-            white-space: pre-wrap; /* เพื่อรักษารูปแบบการขึ้นบรรทัดใหม่ */
+            white-space: pre-wrap;
             word-wrap: break-word;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.05); /* Subtle inner shadow */
         }
         .result-box a {
             color: #007bff;
@@ -93,92 +61,83 @@
         .result-box a:hover {
             text-decoration: underline;
         }
+        /* Custom styles for the search button to match primary color */
+        .btn-primary {
+            background-color: #007bff; /* Bootstrap primary blue */
+            border-color: #007bff;
+        }
+        .btn-primary:hover {
+            background-color: #0056b3;
+            border-color: #0056b3;
+        }
+        .btn-info {
+            background-color: #17a2b8; /* Bootstrap info blue */
+            border-color: #17a2b8;
+        }
+        .btn-info:hover {
+            background-color: #117a8b;
+            border-color: #117a8b;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>ระบบผู้ช่วยสิทธิการเบิกค่ารักษาพยาบาล</h1>
-        <div class="search-box">
-            <input type="text" id="searchInput" placeholder="ค้นหารหัสรายการ, ชื่อบริการ (เช่น HbA1c, CBC, 31001)">
-            <button onclick="performSearch()">ค้นหา</button>
-        </div>
-        <div class="quick-reply-container" id="quickReplyContainer">
-            <!-- Quick Reply Buttons will be inserted here by JavaScript -->
+        <div class="row g-2 mb-2 align-items-center">
+            <div class="col-md-9 col-sm-12">
+                <input type="text" id="searchInput" class="form-control" placeholder="ค้นหารหัสรายการ, ชื่อบริการ (เช่น HbA1c, CBC, 31001)" aria-label="Search input">
+            </div>
+            <div class="col-md-3 col-sm-12">
+                <button class="btn btn-primary w-100" type="button" id="search-button" onclick="performSearch()">ค้นหา</button>
+            </div>
         </div>
         <div class="result-box" id="resultBox">
             <!-- Search results will be displayed here -->
-            <p>กรุณาพิมพ์คำค้นหา หรือเลือกจากปุ่ม Quick Reply ด้านล่าง</p>
+            <p>กรุณาพิมพ์คำค้นหา หรือเลือกจากปุ่มด้านล่าง</p>
+        </div>
+        <div class="text-center mt-2">
+            <a href="https://mbdb.cgd.go.th/wel/searchmed.jsp" target="_blank" class="btn btn-info">
+                <i class="fas fa-globe"></i> ค้นหาในเว็บไซต์กรมบัญชีกลาง
+            </a>
         </div>
     </div>
 
+    <!-- Bootstrap Bundle with Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        const KNOWLEDGE_BASE_ITEMS = [
-            { "query": "CBC", "display": "CBC" },
-            { "query": "HbA1c", "display": "HbA1c" },
-            { "query": "31001", "display": "Urinalysis" }
-        ];
-
         // Function to generate CGD search link (same as in Python)
         function generateCgdSearchLink(query) {
             const encodedQuery = encodeURIComponent(query);
             return `https://mbdb.cgd.go.th/wel/searchmed.jsp?method=search&service_name=${encodedQuery}`;
         }
 
-        // Function to simulate search in knowledge base (simplified for UI mockup)
-        function simulateSearch(query) {
-            const queryLower = query.toLowerCase();
-            const foundItem = KNOWLEDGE_BASE_ITEMS.find(item => 
-                item.query.toLowerCase() === queryLower || 
-                item.display.toLowerCase() === queryLower
-            );
-
-            if (foundItem) {
-                // Simulate a detailed response for known items
-                let response = `🔍 รายการ: ${foundItem.display}\n`;
-                response += `💵 อัตรา: (ข้อมูลจำลอง)\n`;
-                response += `✅ เบิกได้ตามสิทธิ: (ข้อมูลจำลอง)\n`;
-                response += `🔗 ดูข้อมูลทางการ:\n`;
-                response += `<a href="${generateCgdSearchLink(query)}" target="_blank">คลิกที่นี่เพื่อดูใน mbdb.cgd.go.th</a>\n`;
-                response += `ℹ️ รหัสมาตรฐาน: (ข้อมูลจำลอง)\n`;
-                response += `\n*ข้อมูลนี้มาจากฐานความรู้ภายในของระบบ (จำลอง) โปรดตรวจสอบข้อมูลล่าสุดและเป็นทางการจากลิงก์กรมบัญชีกลาง*`;
-                return response;
-            } else {
-                // Not found in simulated knowledge base
-                let response = `❌ ไม่พบข้อมูล \"${query}\" ในระบบฐานความรู้ภายใน (จำลอง)\n\n`;
-                response += `คุณสามารถค้นหาข้อมูลที่เป็นทางการและล่าสุดได้ที่:\n`;
-                response += `<a href="${generateCgdSearchLink(query)}" target="_blank">คลิกเพื่อค้นหา \"${query}\" ใน mbdb.cgd.go.th</a>`;
-                return response;
-            }
-        }
-
-        function performSearch(query = null) {
+        // Function to perform search via API
+        async function performSearch(query = null) {
             const searchInput = document.getElementById('searchInput');
             const resultBox = document.getElementById('resultBox');
             const actualQuery = query || searchInput.value.trim();
 
-            if (actualQuery) {
-                resultBox.innerHTML = simulateSearch(actualQuery);
-            } else {
-                resultBox.innerHTML = '<p>กรุณาพิมพ์คำค้นหา หรือเลือกจากปุ่ม Quick Reply ด้านล่าง</p>';
+            if (!actualQuery) {
+                resultBox.innerHTML = '<p>กรุณาพิมพ์คำค้นหา หรือเลือกจากปุ่มด้านล่าง</p>';
+                return;
+            }
+
+            resultBox.innerHTML = '<p>กำลังค้นหาข้อมูล...</p>'; // Show loading message
+
+            try {
+                const response = await fetch(`/search?query=${encodeURIComponent(actualQuery)}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    resultBox.innerHTML = data.result;
+                } else {
+                    resultBox.innerHTML = data.result; // Display the error/not found message from backend
+                }
+            } catch (error) {
+                console.error('Error fetching search results:', error);
+                resultBox.innerHTML = '<p>เกิดข้อผิดพลาดในการค้นหาข้อมูล กรุณาลองใหม่อีกครั้ง</p>';
             }
         }
-
-        function createQuickReplyButtons() {
-            const quickReplyContainer = document.getElementById('quickReplyContainer');
-            KNOWLEDGE_BASE_ITEMS.forEach(item => {
-                const button = document.createElement('button');
-                button.className = 'quick-reply-button';
-                button.textContent = item.display;
-                button.onclick = () => {
-                    document.getElementById('searchInput').value = item.query; // Set input value
-                    performSearch(item.query);
-                };
-                quickReplyContainer.appendChild(button);
-            });
-        }
-
-        // Initialize quick reply buttons on page load
-        window.onload = createQuickReplyButtons;
     </script>
 </body>
 </html>
