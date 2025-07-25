@@ -1,2 +1,16 @@
-15:38 Jeerawat แอดมิน
-15:38 Smart Chat Shop 🔧 เมนูแอดมิน - เลือกรายการ:
+Bash(cd "D:\Smart Service System" && python main.py)
+  ⎿  Error: Command timed out after 2m 0.0s OpenAI not available - using fallback search
+     [2025-07-25 19:42:46,071] INFO in httpx: HTTP Request: GET https://jeoyvxkqmmqjxorhynxf.supabase.co/rest/v1/products?select=count 
+     "HTTP/2 200 OK"
+     [2025-07-25 19:42:46,074] INFO in src.utils.supabase_database: Successfully connected to Supabase
+     [2025-07-25 19:42:46,076] INFO in __main__: ������� Affiliate Product Review Bot...
+     [2025-07-25 19:42:46,156] INFO in httpx: HTTP Request: GET https://jeoyvxkqmmqjxorhynxf.supabase.co/rest/v1/products?select=%2A "HTTP/2 
+     200 OK"
+     [2025-07-25 19:42:46,233] INFO in httpx: HTTP Request: GET https://jeoyvxkqmmqjxorhynxf.supabase.co/rest/v1/product_searches?select=%2A 
+     "HTTP/2 200 OK"
+     [2025-07-25 19:42:46,300] INFO in httpx: HTTP Request: POST https://jeoyvxkqmmqjxorhynxf.supabase.co/rest/v1/rpc/get_average_price 
+     "HTTP/2 200 OK"
+     [2025-07-25 19:42:46,302] INFO in __main__: �ҹ������ (Supabase): 7 �Թ���, �Ҥ������ 30.00 �ҷ
+     [2025-07-25 19:42:46,302] INFO in __main__: ������������������ 0.0.0.0:5000
+     [2025-07-25 19:42:46,302] INFO in __main__: ���� DEBUG: False
+     … +11 lines (ctrl+r to see all)

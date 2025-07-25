@@ -67,6 +67,8 @@ class AffiliateLineHandler:
         user_id = event.source.user_id
         text = event.message.text.strip()
         
+        print(f"[DEBUG] Received message: '{text}' from user: {user_id}")
+        
         try:
             # ตรวจสอบคำสั่ง Admin
             if text.lower() in [word.lower() for word in config.ADMIN_KEYWORDS]:
@@ -245,7 +247,9 @@ class AffiliateLineHandler:
     def _handle_product_search(self, event, query: str, user_id: str = None):
         """จัดการการค้นหาสินค้า"""
         try:
+            print(f"[DEBUG] Searching for: '{query}'")
             products = self.db.search_products(query, config.MAX_RESULTS_PER_SEARCH)
+            print(f"[DEBUG] Found {len(products)} products")
             
             if products:
                 if len(products) == 1:

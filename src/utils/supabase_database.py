@@ -287,18 +287,18 @@ class SupabaseDatabase:
         
         try:
             # นับจำนวนสินค้า
-            products_count = self.client.table('products').select('count').execute()
+            products_count = self.client.table('products').select('*', count='exact').execute()
             
             # นับจำนวนการค้นหา
-            searches_count = self.client.table('product_searches').select('count').execute()
+            searches_count = self.client.table('product_searches').select('*', count='exact').execute()
             
             # คำนวณราคาเฉลี่ย
             avg_price = self.client.rpc('get_average_price').execute()
             
             return {
-                'total_products': len(products_count.data) if products_count.data else 0,
-                'total_searches': len(searches_count.data) if searches_count.data else 0,
-                'average_price': avg_price.data[0] if avg_price.data else 0,
+                'total_products': products_count.count if products_count.count else 0,
+                'total_searches': searches_count.count if searches_count.count else 0,
+                'average_price': avg_price.data if avg_price.data else 0,
                 'database_type': 'Supabase'
             }
             
