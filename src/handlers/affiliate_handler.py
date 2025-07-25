@@ -304,39 +304,8 @@ class AffiliateLineHandler:
             self._reply_text(event, f"❌ ไม่พบสินค้ารหัส '{product_code}'\n💡 ลองใช้คำสั่ง 'รหัส {product_code}' เพื่อดูสินค้าก่อน")
     
     def _send_product_simple(self, event, product: Dict):
-        """ส่งข้อความแสดงสินค้าแบบธรรมดา"""
-        # ย่อชื่อสินค้าให้อ่านง่าย
-        name = self._shorten_product_name(product['product_name'])
-        price = product['price']
-        sold_count = product.get('sold_count', 0)
-        shop_name = product['shop_name']
-        offer_link = product['offer_link']
-        rating = product.get('rating', 0)
-        
-        # แปลงจำนวนขาย
-        sold_display = self._format_sold_count(sold_count)
-        
-        # สร้างข้อความ
-        message = f"🔸 {name}\n"
-        message += f"💸 ราคาเพียง {price:,.0f} บาท!\n"
-        
-        if sold_count >= 1000:
-            message += f"📦 ขายดีมากกว่า {sold_display} ชิ้น\n"
-        elif sold_count > 0:
-            message += f"📦 ขายแล้ว {sold_display} ชิ้น\n"
-            
-        if rating >= 4.0:
-            stars = "⭐" * min(int(rating), 5)
-            message += f"⭐ คะแนน {rating} {stars}\n"
-            
-        message += f"🏪 ร้าน {shop_name}\n"
-        
-        # สร้างลิงก์แบบมืออาชีพ
-        short_link = self._create_professional_link_display(offer_link)
-        message += f"🛒 {short_link}\n"
-        message += f"👉 {offer_link}"
-        
-        self._reply_text(event, message)
+        """ส่งข้อความแสดงสินค้าแบบธรรมดา - ใช้ Flex Message ซ่อนลิงก์"""
+        self._send_product_flex_hidden_link(event, product)
     
     def _shorten_product_name(self, name: str) -> str:
         """ย่อชื่อสินค้าให้อ่านง่าย"""
@@ -386,6 +355,209 @@ class AffiliateLineHandler:
         style = random.choice(link_styles)
         
         return f"{style}"
+    
+    def _send_product_flex_hidden_link(self, event, product: Dict):
+        """ส่ง Flex Message ที่ซ่อนลิงก์ในปุ่ม"""
+        name = self._shorten_product_name(product['product_name'])
+        price = product['price']
+        sold_count = product.get('sold_count', 0)
+        shop_name = product['shop_name']
+        offer_link = product['offer_link']
+        rating = product.get('rating', 0)
+        
+        sold_display = self._format_sold_count(sold_count)
+        short_link = self._create_professional_link_display(offer_link)
+        
+        # สร้าง content สำหรับ body
+        body_contents = [
+            {
+                "type": "text",
+                "text": name,
+                "weight": "bold",
+                "size": "lg",
+                "wrap": True,
+                "color": "#333333"
+            },
+            {
+                "type": "text",
+                "text": f"💸 ราคาเพียง {price:,.0f} บาท!",
+                "size": "md",
+                "weight": "bold",
+                "color": "#E74C3C",
+                "margin": "sm"
+            }
+        ]
+        
+        # เพิ่มข้อมูลการขาย
+        if sold_count >= 1000:
+            body_contents.append({
+                "type": "text",
+                "text": f"📦 ขายดีมากกว่า {sold_display} ชิ้น",
+                "size": "sm",
+                "color": "#27AE60",
+                "margin": "xs"
+            })
+        elif sold_count > 0:
+            body_contents.append({
+                "type": "text",
+                "text": f"📦 ขายแล้ว {sold_display} ชิ้น",
+                "size": "sm",
+                "color": "#27AE60",
+                "margin": "xs"
+            })
+        
+        # เพิ่มคะแนน
+        if rating >= 4.0:
+            stars = "⭐" * min(int(rating), 5)
+            body_contents.append({
+                "type": "text",
+                "text": f"{stars} ({rating})",
+                "size": "sm",
+                "color": "#F39C12",
+                "margin": "xs"
+            })
+        
+        # เพิ่มชื่อร้าน
+        body_contents.append({
+            "type": "text",
+            "text": f"🏪 ร้าน {shop_name}",
+            "size": "sm",
+            "color": "#666666",
+            "margin": "sm"
+        })
+        
+        flex_contents = {
+            "type": "bubble",
+            "size": "kilo",
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": body_contents,
+                "spacing": "sm",
+                "paddingAll": "18px"
+            },
+            "footer": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "button",
+                        "action": {
+                            "type": "uri",
+                            "label": short_link,
+                            "uri": offer_link
+                        },
+                        "style": "primary",
+                        "color": "#FF6B35",
+                        "height": "sm"
+                    }
+                ],
+                "paddingAll": "18px"
+            }
+        }
+        
+        flex_message = FlexMessage(
+            alt_text=f"🔸 {name}",
+            contents=FlexContainer.from_dict(flex_contents)
+        )
+        
+        self.line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[flex_message]
+            )
+        )
+    
+    def _create_products_carousel(self, products: List[Dict], query: str) -> Dict:
+        """สร้าง Flex Carousel สำหรับสินค้าหลายรายการ"""
+        bubbles = []
+        
+        for product in products[:10]:  # จำกัด 10 รายการ
+            name = self._shorten_product_name(product['product_name'])
+            price = product['price']
+            sold_count = product.get('sold_count', 0)
+            shop_name = product['shop_name']
+            offer_link = product['offer_link']
+            rating = product.get('rating', 0)
+            
+            sold_display = self._format_sold_count(sold_count)
+            short_link = self._create_professional_link_display(offer_link)
+            
+            # สร้าง content สำหรับแต่ละ bubble
+            body_contents = [
+                {
+                    "type": "text",
+                    "text": name,
+                    "weight": "bold",
+                    "size": "md",
+                    "wrap": True,
+                    "maxLines": 3
+                },
+                {
+                    "type": "text",
+                    "text": f"💸 {price:,.0f} บาท",
+                    "size": "sm",
+                    "weight": "bold",
+                    "color": "#E74C3C",
+                    "margin": "sm"
+                }
+            ]
+            
+            if sold_count >= 1000:
+                body_contents.append({
+                    "type": "text",
+                    "text": f"📦 {sold_display}",
+                    "size": "xs",
+                    "color": "#27AE60",
+                    "margin": "xs"
+                })
+            
+            if rating >= 4.0:
+                stars = "⭐" * min(int(rating), 5)
+                body_contents.append({
+                    "type": "text",
+                    "text": f"{stars}",
+                    "size": "xs",
+                    "color": "#F39C12",
+                    "margin": "xs"
+                })
+            
+            bubble = {
+                "type": "bubble",
+                "size": "nano",
+                "body": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": body_contents,
+                    "spacing": "xs",
+                    "paddingAll": "12px"
+                },
+                "footer": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "button",
+                            "action": {
+                                "type": "uri",
+                                "label": short_link,
+                                "uri": offer_link
+                            },
+                            "style": "primary",
+                            "color": "#FF6B35",
+                            "height": "sm"
+                        }
+                    ],
+                    "paddingAll": "12px"
+                }
+            }
+            
+            bubbles.append(bubble)
+        
+        return {
+            "type": "carousel",
+            "contents": bubbles
+        }
     
     def _send_product_flex(self, event, product: Dict):
         """ส่ง Flex Message แสดงรายละเอียดสินค้า"""
@@ -526,43 +698,25 @@ class AffiliateLineHandler:
     
     def _send_products_list(self, event, products: List[Dict], query: str):
         """ส่งรายการสินค้าหลายรายการแบบโซเชียลมีเดีย"""
-        products_text = f"🔍 เจอสินค้าดีๆ เกี่ยวกับ '{query}' มาแชร์ให้:\n\n"
+        if len(products) == 1:
+            # แสดงสินค้าเดียวด้วย Flex Message ที่ซ่อนลิงก์
+            self._send_product_flex_hidden_link(event, products[0])
+            return
         
-        for i, product in enumerate(products, 1):
-            # ย่อชื่อสินค้า
-            name = self._shorten_product_name(product['product_name'])
-            price = product['price']
-            sold_count = product.get('sold_count', 0)
-            shop_name = product['shop_name']
-            offer_link = product['offer_link']
-            rating = product.get('rating', 0)
-            
-            # แปลงจำนวนขาย
-            sold_display = self._format_sold_count(sold_count)
-            
-            products_text += f"🔸 {name}\n"
-            products_text += f"💸 ราคาเพียง {price:,.0f} บาท!\n"
-            
-            if sold_count >= 1000:
-                products_text += f"📦 ขายดีมากกว่า {sold_display} ชิ้น\n"
-            elif sold_count > 0:
-                products_text += f"📦 ขายแล้ว {sold_display} ชิ้น\n"
-                
-            if rating >= 4.0:
-                stars = "⭐" * min(int(rating), 5)
-                products_text += f"⭐ คะแนน {rating} {stars}\n"
-                
-            products_text += f"🏪 ร้าน {shop_name}\n"
-            
-            # สร้างลิงก์แบบมืออาชีพ - ซ่อน URL ที่ยาว
-            short_link = self._create_professional_link_display(offer_link)
-            products_text += f"🛒 {short_link}\n"
-            products_text += f"👉 {offer_link}\n\n"
-            products_text += "="*25 + "\n\n"
+        # สำหรับหลายสินค้า ใช้ Flex Carousel
+        flex_contents = self._create_products_carousel(products, query)
         
-        products_text += "💡 เจอของดี copy ลิงก์ไปสั่งได้เลย!"
+        flex_message = FlexMessage(
+            alt_text=f"🔍 เจอสินค้าดีๆ {len(products)} รายการ",
+            contents=FlexContainer.from_dict(flex_contents)
+        )
         
-        self._reply_text(event, products_text)
+        self.line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[flex_message]
+            )
+        )
     
     def _send_not_found_message(self, event, query: str):
         """ส่งข้อความไม่พบสินค้า"""
