@@ -644,3 +644,20 @@ class SupabaseDatabase:
         except Exception as e:
             self.logger.error(f"Error getting top products by {metric}: {e}")
             return []
+    
+    def get_product_codes_by_prefix(self, prefix: str) -> List[str]:
+        """ดึงรหัสสินค้าที่ขึ้นต้นด้วย prefix ที่ระบุ"""
+        if not self.connected:
+            return []
+        
+        try:
+            response = self.client.table('products')\
+                .select('product_code')\
+                .like('product_code', f'{prefix}%')\
+                .execute()
+            
+            return [item['product_code'] for item in response.data] if response.data else []
+            
+        except Exception as e:
+            self.logger.error(f"Error getting product codes by prefix: {e}")
+            return []

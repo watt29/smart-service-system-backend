@@ -40,6 +40,7 @@ class Config:
     
     # Admin Configuration
     ADMIN_KEYWORDS = ["admin", "แอดมิน", "เมนูแอดมิน", "จัดการสินค้า"]
+    ADMIN_USER_ID = os.environ.get('ADMIN_USER_ID', 'default_admin_user')
     CANCEL_KEYWORD = "cancel"
     
     @classmethod

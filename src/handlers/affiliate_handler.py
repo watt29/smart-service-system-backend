@@ -21,6 +21,9 @@ from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from ..config import config
 from ..utils.supabase_database import SupabaseDatabase
 from ..utils.promotion_generator import PromotionGenerator
+from ..utils.rich_menu_manager import rich_menu_manager
+from ..utils.bulk_importer import bulk_importer
+from ..utils.ai_recommender import ai_recommender
 
 class AffiliateLineHandler:
     """คลาสสำหรับจัดการ LINE Bot messages สำหรับ Affiliate Products"""
@@ -115,6 +118,32 @@ class AffiliateLineHandler:
                 self._show_categories(event)
                 return
             
+            # รองรับข้อความจาก Rich Menu และ Quick Reply
+            if text.lower() in ["🔍 ค้นหาสินค้า", "ค้นหาสินค้า", "search"]:
+                self._show_search_guide(event)
+                return
+            
+            if text.lower() in ["🔥 ขายดี", "ขายดี", "bestseller"]:
+                self._show_bestsellers(event)
+                return
+            
+            if text.lower() in ["💰 โปรโมชั่น", "โปรโมชั่น", "promotion"]:
+                self._show_promotions(event)
+                return
+            
+            if text.lower() in ["❓ ช่วยเหลือ", "ช่วยเหลือ", "help"]:
+                self._show_help_menu(event)
+                return
+            
+            if text.lower() in ["🏠 หน้าหลัก", "หน้าหลัก", "home"]:
+                self._show_home_menu(event)
+                return
+            
+            # คำสั่ง Admin จาก Rich Menu
+            if text.lower() in ["dashboard"] and user_id == config.ADMIN_USER_ID:
+                self._show_admin_dashboard(event)
+                return
+            
             if text.lower() in ["สถิติหมวดหมู่", "category-stats"] and user_id == config.ADMIN_USER_ID:
                 self._show_category_stats(event)
                 return
@@ -131,10 +160,21 @@ class AffiliateLineHandler:
                 self._handle_bulk_delete(event, text[12:].strip())
                 return
             
+            if text.lower().startswith("bulk-import ") and user_id == config.ADMIN_USER_ID:
+                # คำสั่ง: bulk-import [file_url_or_sample]
+                # ตัวอย่าง: bulk-import sample หรือ bulk-import https://example.com/products.csv
+                self._handle_bulk_import(event, text[12:].strip())
+                return
+            
             if text.lower().startswith("top-products ") and user_id == config.ADMIN_USER_ID:
                 # คำสั่ง: top-products [metric] [limit]
                 # ตัวอย่าง: top-products sold_count 5
                 self._handle_top_products(event, text[13:].strip())
+                return
+            
+            if text.lower().startswith("แนะนำ") or text.lower() in ["recommendations", "recommend", "แนะนำสินค้า"]:
+                # คำสั่งแนะนำสินค้าด้วย AI
+                self._show_ai_recommendations(event, user_id, text)
                 return
             
             if text.lower().startswith("หมวด "):
@@ -400,6 +440,10 @@ class AffiliateLineHandler:
                 max_price=max_price,
                 order_by=order_by
             )
+            
+            # อัปเดต AI recommendations จากการค้นหา
+            if user_id and search_result.get('data'):
+                ai_recommender.update_user_interests(user_id, query, search_result['data'])
             
             products = search_result.get('products', [])
             total = search_result.get('total', 0)
@@ -1562,6 +1606,120 @@ class AffiliateLineHandler:
             print(f"[ERROR] Bulk delete error: {e}")
             self._reply_text(event, "❌ เกิดข้อผิดพลาดในการ Bulk Delete")
     
+    def _handle_bulk_import(self, event, command: str):
+        """จัดการคำสั่ง bulk import - สำหรับ Admin เท่านั้น"""
+        try:
+            if command.lower() == 'sample':
+                # สร้างไฟล์ตัวอย่าง CSV
+                sample_path = "sample_products.csv"
+                message = bulk_importer.create_sample_csv(sample_path)
+                
+                response = f"📁 **ไฟล์ตัวอย่างพร้อมใช้งาน**\n\n"
+                response += f"{message}\n\n"
+                response += f"📋 **วิธีใช้งาน:**\n"
+                response += f"1. ดาวน์โหลดไฟล์ `{sample_path}`\n"
+                response += f"2. แก้ไขข้อมูลสินค้าตามต้องการ\n"
+                response += f"3. อัปโหลดไฟล์ไปยังเซิร์ฟเวอร์\n"
+                response += f"4. ใช้คำสั่ง: `bulk-import [URL]`\n\n"
+                response += f"🔧 **คอลัมน์ที่รองรับ:**\n"
+                response += f"• product_name, category, price (จำเป็น)\n"
+                response += f"• description, brand, rating, tags\n"
+                response += f"• affiliate_link, image_url\n"
+                response += f"• commission_rate, is_featured"
+                
+                self._reply_text(event, response)
+                return
+            
+            # ตรวจสอบว่าเป็น URL หรือไม่
+            if command.startswith('http'):
+                response = f"🚧 **ฟีเจอร์กำลังพัฒนา**\n\n"
+                response += f"ขณะนี้ยังไม่รองรับการนำเข้าจาก URL\n"
+                response += f"กรุณาใช้คำสั่ง: `bulk-import sample`\n"
+                response += f"เพื่อสร้างไฟล์ตัวอย่างก่อน"
+            else:
+                response = f"❌ **คำสั่งไม่ถูกต้อง**\n\n"
+                response += f"💡 **วิธีใช้งาน:**\n"
+                response += f"• `bulk-import sample` - สร้างไฟล์ตัวอย่าง\n"
+                response += f"• `bulk-import [URL]` - นำเข้าจาก URL (กำลังพัฒนา)"
+            
+            self._reply_text(event, response)
+                
+        except Exception as e:
+            print(f"[ERROR] Bulk import error: {e}")
+            self._reply_text(event, "❌ เกิดข้อผิดพลาดในการนำเข้าข้อมูล")
+    
+    def _show_ai_recommendations(self, event, user_id: str, context: str = ""):
+        """แสดงคำแนะนำสินค้าด้วย AI"""
+        try:
+            print(f"[DEBUG] AI recommendations for user: {user_id}")
+            
+            # ดึงคำแนะนำแบบปรับตัว
+            recommendations = ai_recommender.get_personalized_recommendations(user_id, context, limit=6)
+            
+            if not any(recommendations.values()):
+                self._reply_text(event, "🤖 ระบบแนะนำยังไม่มีข้อมูลเพียงพอ\nลองค้นหาสินค้าก่อนเพื่อให้ระบบเรียนรู้ความสนใจของคุณ")
+                return
+            
+            # สร้างข้อความแนะนำ
+            response = "🤖 **AI แนะนำสินค้าสำหรับคุณ**\n\n"
+            
+            # แนะนำตามความสนใจส่วนตัว
+            if recommendations['personal']:
+                response += "💝 **แนะนำตามความสนใจ:**\n"
+                for i, product in enumerate(recommendations['personal'][:3], 1):
+                    name = product.get('product_name', 'ไม่ระบุชื่อ')[:40]
+                    price = f"{product.get('price', 0):,.0f}"
+                    reason = product.get('recommendation_reason', '')
+                    response += f"{i}. {name}\n   💰 {price} บาท | {reason}\n\n"
+            
+            # แนะนำสินค้าที่กำลังมาแรง
+            if recommendations['trending']:
+                response += "🔥 **สินค้าขายดีตอนนี้:**\n"
+                for i, product in enumerate(recommendations['trending'][:2], 1):
+                    name = product.get('product_name', 'ไม่ระบุชื่อ')[:40]
+                    price = f"{product.get('price', 0):,.0f}"
+                    sold = product.get('sold_count', 0)
+                    response += f"{i}. {name}\n   💰 {price} บาท | ขายไป {sold:,} ชิ้น\n\n"
+            
+            # เพิ่มข้อมูลโปรไฟล์ผู้ใช้
+            user_profile = ai_recommender.get_user_profile_summary(user_id)
+            if user_profile.get('top_interests'):
+                interests = [interest[0] for interest in user_profile['top_interests'][:3]]
+                response += f"📊 **ความสนใจของคุณ:** {', '.join(interests)}\n"
+            
+            response += f"🎯 **คะแนนการแนะนำ:** {recommendations['total_score']}/10\n\n"
+            response += "💡 **ทิป:** ค้นหาสินค้ามากขึ้นเพื่อให้ AI แนะนำได้แม่นยำยิ่งขึ้น!"
+            
+            # สร้าง Quick Reply สำหรับดูรายละเอียด
+            quick_reply_items = []
+            all_products = recommendations['personal'] + recommendations['trending']
+            
+            for product in all_products[:3]:
+                code = product.get('product_code')
+                if code:
+                    quick_reply_items.append({
+                        'label': f"ดู {product.get('product_name', '')[:15]}...",
+                        'text': f"รหัส {code}"
+                    })
+            
+            # เพิ่มตัวเลือกอื่น ๆ
+            quick_reply_items.extend([
+                {'label': '🔄 แนะนำใหม่', 'text': 'แนะนำสินค้า'},
+                {'label': '📊 โปรไฟล์ของฉัน', 'text': 'โปรไฟล์'},
+                {'label': '🏠 หน้าหลัก', 'text': 'หน้าหลัก'}
+            ])
+            
+            quick_replies = self._create_modern_quick_reply(quick_reply_items[:13])  # จำกัด 13 รายการ
+            
+            self.line_bot_api.reply_message(
+                event.reply_token,
+                TextMessage(text=response, quick_reply=quick_replies)
+            )
+                
+        except Exception as e:
+            print(f"[ERROR] AI recommendations error: {e}")
+            self._reply_text(event, "❌ เกิดข้อผิดพลาดในระบบแนะนำ AI")
+    
     def _handle_top_products(self, event, command: str):
         """จัดการคำสั่งแสดงสินค้าอันดับสูง - สำหรับ Admin เท่านั้น"""
         try:
@@ -1624,6 +1782,236 @@ class AffiliateLineHandler:
         except Exception as e:
             print(f"[ERROR] Top products error: {e}")
             self._reply_text(event, "❌ เกิดข้อผิดพลาดในการแสดงสินค้าอันดับสูง")
+    
+    def _create_modern_quick_reply(self, items: List[Dict[str, str]]) -> QuickReply:
+        """สร้าง Quick Reply แบบทันสมัย"""
+        quick_reply_items = []
+        
+        for item in items[:13]:  # จำกัด 13 รายการตาม LINE limit
+            quick_reply_items.append(
+                QuickReplyItem(action=MessageAction(
+                    label=item['label'], 
+                    text=item['text']
+                ))
+            )
+        
+        return QuickReply(items=quick_reply_items)
+    
+    def _show_search_guide(self, event):
+        """แสดงคู่มือการค้นหาพร้อม Quick Reply"""
+        search_options = [
+            {'label': '🔍 ค้นหาทั่วไป', 'text': 'ค้นหา'},
+            {'label': '🏷️ ค้นหาด้วยรหัส', 'text': 'รหัส'},
+            {'label': '📂 เลือกหมวดหมู่', 'text': 'หมวดหมู่'},
+            {'label': '🔥 สินค้าขายดี', 'text': 'เรียง ทั้งหมด ขายดี'},
+            {'label': '💰 ราคาถูกที่สุด', 'text': 'เรียง ทั้งหมด ราคาถูก'},
+            {'label': '⭐ คะแนนสูงสุด', 'text': 'เรียง ทั้งหมด คะแนน'},
+            {'label': '🆕 สินค้าใหม่', 'text': 'เรียง ทั้งหมด ใหม่'},
+            {'label': '🎯 กรองตามราคา', 'text': 'กรอง'},
+            {'label': '📊 สถิติสินค้า', 'text': 'สถิติ'}
+        ]
+        
+        quick_replies = self._create_modern_quick_reply(search_options)
+        
+        guide_text = """🔍 **คู่มือการค้นหาสินค้า**
+
+🎯 **วิธีการค้นหา**:
+• พิมพ์ชื่อสินค้าที่ต้องการ เช่น "อาหารแมว"
+• ใช้รหัสสินค้า เช่น "รหัส PROD001"
+• เลือกหมวดหมู่จากปุ่มด้านล่าง
+
+⚡ **คำสั่งขั้นสูง**:
+• `กรอง [สินค้า] ราคา:100-500` - กรองตามราคา
+• `เรียง [สินค้า] ขายดี` - เรียงตามยอดขาย
+• `หน้า2:[สินค้า]` - ดูหน้าถัดไป
+
+🎨 **เคล็ดลับ**: กดปุ่มด้านล่างเพื่อค้นหาแบบง่ายๆ!"""
+        
+        self.line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=guide_text, quick_reply=quick_replies)]
+            )
+        )
+    
+    def _show_bestsellers(self, event):
+        """แสดงสินค้าขายดีพร้อม Quick Reply หมวดหมู่"""
+        try:
+            # ดึงสินค้าขายดี
+            bestsellers = self.db.get_top_products_by_metric('sold_count', 5)
+            categories = self.db.get_categories()[:8]  # เอาแค่ 8 หมวดหมู่
+            
+            # สร้าง Quick Reply สำหรับหมวดหมู่ขายดี
+            category_options = []
+            for cat in categories:
+                category_options.append({
+                    'label': f'🔥 {cat}', 
+                    'text': f'เรียง หมวด:{cat} ขายดี'
+                })
+            
+            # เพิ่มตัวเลือกพิเศษ
+            category_options.extend([
+                {'label': '🏆 Top 10 ขายดี', 'text': 'top-products sold_count 10'},
+                {'label': '💎 Top 5 ราคาแพง', 'text': 'top-products price 5'},
+                {'label': '⭐ Top 5 คะแนนสูง', 'text': 'top-products rating 5'},
+                {'label': '📊 สถิติครบถ้วน', 'text': 'สถิติ'},
+                {'label': '🏠 หน้าหลัก', 'text': '🏠 หน้าหลัก'}
+            ])
+            
+            quick_replies = self._create_modern_quick_reply(category_options)
+            
+            response_text = "🔥 **สินค้าขายดีอันดับต้นๆ**\n\n"
+            
+            if bestsellers:
+                for i, product in enumerate(bestsellers, 1):
+                    name = product['product_name'][:30] + "..." if len(product['product_name']) > 30 else product['product_name']
+                    response_text += f"{i}. **{name}**\n"
+                    response_text += f"   💰 {product['price']:,.0f}฿ | 🔥 {product.get('sold_count', 0):,} ขาย\n"
+                    response_text += f"   🏪 {product['shop_name']}\n\n"
+            
+            response_text += "🎯 **เลือกหมวดหมู่เพื่อดูสินค้าขายดีเฉพาะหมวด**"
+            
+            self.line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=response_text, quick_reply=quick_replies)]
+                )
+            )
+            
+        except Exception as e:
+            print(f"[ERROR] Show bestsellers error: {e}")
+            self._reply_text(event, "❌ เกิดข้อผิดพลาดในการแสดงสินค้าขายดี")
+    
+    def _show_promotions(self, event):
+        """แสดงโปรโมชั่นและข้อเสนอพิเศษ"""
+        promo_options = [
+            {'label': '🔥 สินค้าขายดี', 'text': 'เรียง ทั้งหมด ขายดี'},
+            {'label': '💰 ราคาดีที่สุด', 'text': 'เรียง ทั้งหมด ราคาถูก'},
+            {'label': '⭐ คะแนนสูงสุด', 'text': 'เรียง ทั้งหมด คะแนน'},
+            {'label': '🆕 สินค้าใหม่', 'text': 'เรียง ทั้งหมด ใหม่'},
+            {'label': '🎯 สินค้าแนะนำ', 'text': 'แนะนำ'},
+            {'label': '🏷️ ค้นหาด้วยรหัส', 'text': 'รหัส'},
+            {'label': '📂 เลือกหมวดหมู่', 'text': 'หมวดหมู่'},
+            {'label': '📊 ดูสถิติ', 'text': 'สถิติ'}
+        ]
+        
+        quick_replies = self._create_modern_quick_reply(promo_options)
+        
+        promo_text = """💰 **โปรโมชั่นพิเศษ**
+
+🎉 **ข้อเสนอพิเศษวันนี้**:
+• 🔥 สินค้าขายดี - คัดสรรแล้ว!
+• 💎 สินค้าคุณภาพ - ราคาดีที่สุด
+• ⭐ สินค้าคะแนนสูง - รีวิวดีเยี่ยม
+• 🆕 สินค้าใหม่ - อัปเดตล่าสุด
+
+🎯 **วิธีรับโปรโมชั่น**:
+1. เลือกหมวดหมู่ที่สนใจ
+2. เรียงตามที่ต้องการ (ขายดี/ราคา/คะแนน)
+3. คลิกซื้อเพื่อรับส่วนลดพิเศษ!
+
+💡 **เคล็ดลับ**: ใช้การกรองเพื่อหาสินค้าในงบประมาณที่ต้องการ
+
+🎁 กดปุ่มด้านล่างเพื่อเริ่มช้อปปิ้ง!"""
+        
+        self.line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=promo_text, quick_reply=quick_replies)]
+            )
+        )
+    
+    def _show_help_menu(self, event):
+        """แสดงเมนูช่วยเหลือที่ครอบคลุม"""
+        help_options = [
+            {'label': '🔍 วิธีค้นหา', 'text': '🔍 ค้นหาสินค้า'},
+            {'label': '📂 ดูหมวดหมู่', 'text': 'หมวดหมู่'},
+            {'label': '🏷️ ค้นหาด้วยรหัส', 'text': 'รหัส EXAMPLE'},
+            {'label': '💰 ข้อเสนอพิเศษ', 'text': '💰 โปรโมชั่น'},
+            {'label': '📊 ดูสถิติ', 'text': 'สถิติ'},
+            {'label': '🎯 ตัวอย่างคำสั่ง', 'text': 'ตัวอย่าง'},
+            {'label': '🔥 สินค้าแนะนำ', 'text': '🔥 ขายดี'},
+            {'label': '🏠 หน้าหลัก', 'text': '🏠 หน้าหลัก'}
+        ]
+        
+        quick_replies = self._create_modern_quick_reply(help_options)
+        
+        help_text = """❓ **ศูนย์ช่วยเหลือ - คู่มือการใช้งาน**
+
+🎯 **การค้นหาพื้นฐาน**:
+• พิมพ์ชื่อสินค้า: `อาหารแมว`, `ครีม`, `โทรศัพท์`
+• ค้นหาด้วยรหัส: `รหัส PROD001`
+• เลือกหมวดหมู่: กด `หมวดหมู่`
+
+⚡ **คำสั่งขั้นสูง**:
+• `กรอง [สินค้า] ราคา:100-500` - กรองตามราคา
+• `เรียง [สินค้า] ขายดี` - เรียงตามยอดขาย
+• `หน้า2:[สินค้า]` - ดูหน้าถัดไป
+
+🎨 **ฟีเจอร์พิเศษ**:
+• Smart Category Grouping - หมวดหมู่เรียงตามความนิยม
+• Enterprise Pagination - ค้นหาในสินค้าหลายพันรายการ
+• Professional UI - การแสดงผลแบบโซเชียลมีเดีย
+
+🔧 **Admin Features**:
+• Dashboard แบบครอบคลุม
+• Bulk Operations จัดการหลายรายการ
+• Analytics & Insights ข้อมูลเชิงลึก
+
+💡 **ต้องการความช่วยเหลือเพิ่มเติม?**
+กดปุ่มด้านล่างเพื่อดูรายละเอียดเพิ่มเติม!"""
+        
+        self.line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=help_text, quick_reply=quick_replies)]
+            )
+        )
+    
+    def _show_home_menu(self, event):
+        """แสดงเมนูหน้าหลักที่ครอบคลุม"""
+        home_options = [
+            {'label': '🔍 ค้นหาสินค้า', 'text': '🔍 ค้นหาสินค้า'},
+            {'label': '📂 หมวดหมู่', 'text': 'หมวดหมู่'},
+            {'label': '🔥 ขายดี', 'text': '🔥 ขายดี'},
+            {'label': '💰 โปรโมชั่น', 'text': '💰 โปรโมชั่น'},
+            {'label': '📊 สถิติ', 'text': 'สถิติ'},
+            {'label': '❓ ช่วยเหลือ', 'text': '❓ ช่วยเหลือ'},
+            {'label': '⭐ สินค้าคะแนนสูง', 'text': 'เรียง ทั้งหมด คะแนน'},
+            {'label': '🆕 สินค้าใหม่', 'text': 'เรียง ทั้งหมด ใหม่'}
+        ]
+        
+        quick_replies = self._create_modern_quick_reply(home_options)
+        
+        stats = self.db.get_stats()
+        total_products = stats.get('total_products', 0)
+        categories_count = stats.get('categories_count', 0)
+        
+        home_text = f"""🏠 **ยินดีต้อนรับสู่ Affiliate Shopping Assistant**
+
+🛍️ **ภาพรวมระบบ**:
+• สินค้าทั้งหมด: **{total_products:,}** รายการ
+• หมวดหมู่: **{categories_count}** หมวด
+• ระบบค้นหาขั้นสูงพร้อม AI
+• รองรับสินค้าหลายพันรายการ
+
+🎯 **ฟีเจอร์เด่น**:
+• 🔍 **ค้นหาอัจฉริยะ** - หาสินค้าได้แม่นยำ
+• 📂 **Smart Category** - หมวดหมู่เรียงตามความนิยม
+• 🔥 **ขายดี Real-time** - อัปเดตตลอดเวลา
+• 💰 **โปรโมชั่นพิเศษ** - ข้อเสนอสุดคุ้ม
+
+🚀 **พร้อมเริ่มช้อปปิ้งแล้ว!**
+เลือกสิ่งที่ต้องการจากปุ่มด้านล่าง หรือพิมพ์ชื่อสินค้าได้เลย!
+
+💡 **เคล็ดลับ**: ลองพิมพ์ "อาหารแมว" หรือ "โทรศัพท์" เพื่อดูตัวอย่าง!"""
+        
+        self.line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=home_text, quick_reply=quick_replies)]
+            )
+        )
     
     def _reply_text(self, event, text: str):
         """ส่งข้อความตอบกลับ"""
