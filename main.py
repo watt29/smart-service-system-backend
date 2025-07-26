@@ -76,6 +76,11 @@ def health_check():
         "supabase_enabled": config.USE_SUPABASE
     })
 
+@app.route('/ping')
+def ping():
+    """Simple ping endpoint เพื่อป้องกันเซิร์ฟเวอร์หยุด"""
+    return "pong", 200
+
 @app.route('/api/search', methods=['GET'])
 def search_products_api():
     """API สำหรับค้นหาสินค้า"""
