@@ -118,59 +118,65 @@ class AffiliateLineHandler:
                 self._show_categories(event)
                 return
             
-            # รองรับข้อความจาก Rich Menu และ Quick Reply
-            if text.lower() in ["🔍 ค้นหาสินค้า", "ค้นหาสินค้า", "search"]:
+            # รองรับข้อความจาก Rich Menu (อังกฤษ)
+            if text.upper() in ["SEARCH", "Q"]:
                 self._show_search_guide(event)
                 return
             
-            if text.lower() in ["🔥 ขายดี", "ขายดี", "bestseller"]:
+            if text.upper() in ["CATEGORY", "C"]:
+                self._show_categories(event)
+                return
+                
+            if text.upper() in ["BESTSELLER", "B"]:
                 self._show_bestsellers(event)
                 return
             
-            if text.lower() in ["💰 โปรโมชั่น", "โปรโมชั่น", "promotion"]:
+            if text.upper() in ["PROMOTION", "P"]:
                 self._show_promotions(event)
                 return
+                
+            if text.upper() in ["STATS", "S"]:
+                self._show_stats(event)
+                return
             
-            if text.lower() in ["❓ ช่วยเหลือ", "ช่วยเหลือ", "help"]:
+            if text.upper() in ["HELP", "H"]:
                 self._show_help_menu(event)
                 return
             
-            if text.lower() in ["🏠 หน้าหลัก", "หน้าหลัก", "home"]:
+            # รองรับข้อความภาษาไทยง่าย ๆ
+            if text in ["ค้นหา", "หา", "ซื้อ"]:
+                self._show_search_guide(event)
+                return
+                
+            if text in ["หมวด", "หมวดหมู่", "ประเภท"]:
+                self._show_categories(event)
+                return
+                
+            if text in ["ขายดี", "นิยม", "ฮิต"]:
+                self._show_bestsellers(event)
+                return
+                
+            if text in ["โปรโมชั่น", "โปร", "ลด", "ส่วนลด"]:
+                self._show_promotions(event)
+                return
+                
+            if text in ["สถิติ", "ข้อมูล", "จำนวน"]:
+                self._show_stats(event)
+                return
+                
+            if text in ["ช่วย", "ช่วยเหลือ", "วิธีใช้", "help"]:
+                self._show_help_menu(event)
+                return
+                
+            if text in ["หน้าแรก", "กลับ", "เริ่มใหม่", "home"]:
                 self._show_home_menu(event)
                 return
             
-            # คำสั่ง Admin จาก Rich Menu
-            if text.lower() in ["dashboard"] and user_id == config.ADMIN_USER_ID:
-                self._show_admin_dashboard(event)
-                return
-            
-            if text.lower() in ["สถิติหมวดหมู่", "category-stats"] and user_id == config.ADMIN_USER_ID:
-                self._show_category_stats(event)
-                return
-            
-            if text.lower().startswith("bulk-update ") and user_id == config.ADMIN_USER_ID:
-                # คำสั่ง: bulk-update [codes] [field]=[value]
-                # ตัวอย่าง: bulk-update PROD001,PROD002 commission_rate=15
-                self._handle_bulk_update(event, text[12:].strip())
-                return
-            
-            if text.lower().startswith("bulk-delete ") and user_id == config.ADMIN_USER_ID:
-                # คำสั่ง: bulk-delete [codes]
-                # ตัวอย่าง: bulk-delete PROD001,PROD002,PROD003
-                self._handle_bulk_delete(event, text[12:].strip())
-                return
-            
-            if text.lower().startswith("bulk-import ") and user_id == config.ADMIN_USER_ID:
-                # คำสั่ง: bulk-import [file_url_or_sample]
-                # ตัวอย่าง: bulk-import sample หรือ bulk-import https://example.com/products.csv
-                self._handle_bulk_import(event, text[12:].strip())
-                return
-            
-            if text.lower().startswith("top-products ") and user_id == config.ADMIN_USER_ID:
-                # คำสั่ง: top-products [metric] [limit]
-                # ตัวอย่าง: top-products sold_count 5
-                self._handle_top_products(event, text[13:].strip())
-                return
+            # คำสั่ง Admin แบบง่าย ๆ (ต้องเป็น Admin เท่านั้น)
+            if user_id == config.ADMIN_USER_ID:
+                if text.startswith("/"):
+                    self._handle_admin_commands(event, text, user_id)
+                    return
             
             if text.lower().startswith("แนะนำ") or text.lower() in ["recommendations", "recommend", "แนะนำสินค้า"]:
                 # คำสั่งแนะนำสินค้าด้วย AI
@@ -189,17 +195,66 @@ class AffiliateLineHandler:
             print(f"[ERROR] Affiliate LINE handler error: {traceback.format_exc()}")
             self._reply_error_message(event)
     
+    def _handle_admin_commands(self, event, text: str, user_id: str):
+        """จัดการคำสั่ง Admin แบบง่าย"""
+        command = text.lower()
+        
+        if command == "/help":
+            self._show_admin_help(event)
+        elif command == "/stats" or command == "/สถิติ":
+            self._show_admin_stats(event)
+        elif command == "/products" or command == "/สินค้า":
+            self._show_admin_products(event)
+        elif command == "/users" or command == "/ผู้ใช้":
+            self._show_admin_users(event)
+        elif command.startswith("/add"):
+            self._show_add_product_guide(event)
+        elif command.startswith("/import"):
+            self._show_import_guide(event)
+        else:
+            self._show_admin_help(event)
+    
+    def _show_admin_help(self, event):
+        """แสดงคำสั่ง Admin ทั้งหมด"""
+        help_text = """🔐 คำสั่ง Admin
+
+📊 /stats - ดูสถิติระบบ
+📦 /products - จัดการสินค้า  
+👥 /users - ดูข้อมูลผู้ใช้
+➕ /add - เพิ่มสินค้าใหม่
+📥 /import - นำเข้าสินค้าจำนวนมาก
+
+💡 ใช้คำสั่งง่าย ๆ เท่านั้น!"""
+        
+        self.line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=help_text)]
+            )
+        )
+
     def _handle_admin_entry(self, event, user_id: str):
         """จัดการการเข้าสู่โหมด Admin"""
-        self.admin_state[user_id] = {"mode": "main_menu"}
+        welcome_text = """🔐 ยินดีต้อนรับ Admin!
+
+ใช้คำสั่งง่าย ๆ เหล่านี้:
+
+📊 /stats - ดูสถิติ
+📦 /products - จัดการสินค้า
+👥 /users - ดูผู้ใช้
+➕ /add - เพิ่มสินค้า
+📥 /import - นำเข้าสินค้า
+❓ /help - ดูคำสั่งทั้งหมด
+
+พิมพ์คำสั่งที่ต้องการได้เลย!"""
         
         quick_replies = QuickReply(items=[
-            QuickReplyItem(action=MessageAction(label="➕ เพิ่มสินค้า", text="➕ เพิ่มสินค้า")),
-            QuickReplyItem(action=MessageAction(label="✏️ แก้ไขสินค้า", text="✏️ แก้ไขสินค้า")),
-            QuickReplyItem(action=MessageAction(label="❌ ลบสินค้า", text="❌ ลบสินค้า")),
-            QuickReplyItem(action=MessageAction(label="📋 ดูสินค้าทั้งหมด", text="📋 ดูสินค้าทั้งหมด")),
-            QuickReplyItem(action=MessageAction(label="📊 สถิติ", text="📊 สถิติ")),
-            QuickReplyItem(action=MessageAction(label="🎛️ Dashboard", text="🎛️ Dashboard")),
+            QuickReplyItem(action=MessageAction(label="📊 สถิติ", text="/stats")),
+            QuickReplyItem(action=MessageAction(label="📦 สินค้า", text="/products")),
+            QuickReplyItem(action=MessageAction(label="👥 ผู้ใช้", text="/users")),
+            QuickReplyItem(action=MessageAction(label="➕ เพิ่มสินค้า", text="/add")),
+            QuickReplyItem(action=MessageAction(label="📥 นำเข้า", text="/import")),
+            QuickReplyItem(action=MessageAction(label="❓ ช่วยเหลือ", text="/help")),
         ])
         
         self.line_bot_api.reply_message(
@@ -1050,61 +1105,52 @@ class AffiliateLineHandler:
         self._reply_text(event, stats_text)
     
     def _show_categories(self, event):
-        """แสดงหมวดหมู่สินค้าด้วย Smart Category Grouping และ Quick Reply buttons"""
-        try:
-            # ดึงหมวดหมู่พร้อมสถิติความนิยม
-            categories_with_stats = self.db.get_categories_with_stats()
-            price_range = self.db.get_price_range()
+        """แสดงหมวดหมู่สินค้าแบบง่าย"""
+        category_text = "📋 หมวดหมู่สินค้า
+
+💬 กดเลือกหมวดที่สนใจ:"
+        
+        # Quick Reply แบบง่าย เด็กใช้ได้
+        quick_replies = QuickReply(items=[
+            QuickReplyItem(action=MessageAction(label="📱 มือถือ", text="มือถือ")),
+            QuickReplyItem(action=MessageAction(label="👕 เสื้อผ้า", text="เสื้อผ้า")),
+            QuickReplyItem(action=MessageAction(label="👟 รองเท้า", text="รองเท้า")),
+            QuickReplyItem(action=MessageAction(label="🎒 กระเป๋า", text="กระเป๋า")),
+            QuickReplyItem(action=MessageAction(label="💻 คอมพิวเตอร์", text="คอมพิวเตอร์")),
+            QuickReplyItem(action=MessageAction(label="🏠 ของใช้บ้าน", text="ของใช้บ้าน")),
+            QuickReplyItem(action=MessageAction(label="🎮 เกมส์", text="เกมส์")),
+            QuickReplyItem(action=MessageAction(label="📚 หนังสือ", text="หนังสือ"))
+        ])
+        
+        self.line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=category_text, quick_reply=quick_replies)]
+            )
+        )
+        except Exception:
+            # Fallback หากเกิดข้อผิดพลาด
+            category_text = "📋 หมวดหมู่สินค้า
+
+💬 กดเลือกหมวดที่สนใจ:"
             
-            if not categories_with_stats:
-                # Fallback หากไม่มีข้อมูล
-                categories = ["อิเล็กทรอนิกส์", "แฟชั่น", "ความงาม", "สุขภาพ", "บ้านและสวน", "กีฬา", "หนังสือ", "เด็กและของเล่น", "อาหาร", "สัตว์เลี้ยง"]
-                categories_with_stats = [{'name': cat, 'product_count': 0, 'popularity_score': 0} for cat in categories]
+            quick_replies = QuickReply(items=[
+                QuickReplyItem(action=MessageAction(label="📱 มือถือ", text="มือถือ")),
+                QuickReplyItem(action=MessageAction(label="👕 เสื้อผ้า", text="เสื้อผ้า")),
+                QuickReplyItem(action=MessageAction(label="👟 รองเท้า", text="รองเท้า")),
+                QuickReplyItem(action=MessageAction(label="🎒 กระเป๋า", text="กระเป๋า")),
+                QuickReplyItem(action=MessageAction(label="💻 คอมพิวเตอร์", text="คอมพิวเตอร์")),
+                QuickReplyItem(action=MessageAction(label="🏠 ของใช้บ้าน", text="ของใช้บ้าน")),
+                QuickReplyItem(action=MessageAction(label="🎮 เกมส์", text="เกมส์")),
+                QuickReplyItem(action=MessageAction(label="📚 หนังสือ", text="หนังสือ"))
+            ])
             
-            # จัดกลุ่มหมวดหมู่ตามความนิยม
-            hot_categories = []  # คะแนน >= 50
-            popular_categories = []  # คะแนน 20-49
-            normal_categories = []  # คะแนน < 20
-            
-            for cat in categories_with_stats:
-                if cat['popularity_score'] >= 50:
-                    hot_categories.append(cat)
-                elif cat['popularity_score'] >= 20:
-                    popular_categories.append(cat)
-                else:
-                    normal_categories.append(cat)
-            
-            # สร้าง Quick Reply buttons แบบ Smart grouping
-            quick_reply_items = []
-            
-            # หมวดหมู่ฮิต (ใส่ emoji พิเศษ)
-            for cat in hot_categories[:4]:  # จำกัด 4 หมวดหมู่ฮิต
-                emoji = "🔥" if cat['popularity_score'] >= 80 else "⭐"
-                quick_reply_items.append(
-                    QuickReplyItem(action=MessageAction(
-                        label=f"{emoji} {cat['name']}", 
-                        text=f"หมวด {cat['name']}"
-                    ))
+            self.line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=category_text, quick_reply=quick_replies)]
                 )
-            
-            # หมวดหมู่ยอดนิยม
-            for cat in popular_categories[:4]:  # จำกัด 4 หมวดหมู่
-                quick_reply_items.append(
-                    QuickReplyItem(action=MessageAction(
-                        label=f"📂 {cat['name']}", 
-                        text=f"หมวด {cat['name']}"
-                    ))
-                )
-            
-            # หมวดหมู่ปกติ (เติมเต็มให้ครบ)
-            remaining_slots = 10 - len(quick_reply_items)
-            for cat in normal_categories[:remaining_slots]:
-                quick_reply_items.append(
-                    QuickReplyItem(action=MessageAction(
-                        label=f"📁 {cat['name']}", 
-                        text=f"หมวด {cat['name']}"
-                    ))
-                )
+            )
             
             # เพิ่มปุ่มพิเศษ
             quick_reply_items.extend([
@@ -1798,34 +1844,27 @@ class AffiliateLineHandler:
         return QuickReply(items=quick_reply_items)
     
     def _show_search_guide(self, event):
-        """แสดงคู่มือการค้นหาพร้อม Quick Reply"""
-        search_options = [
-            {'label': '🔍 ค้นหาทั่วไป', 'text': 'ค้นหา'},
-            {'label': '🏷️ ค้นหาด้วยรหัส', 'text': 'รหัส'},
-            {'label': '📂 เลือกหมวดหมู่', 'text': 'หมวดหมู่'},
-            {'label': '🔥 สินค้าขายดี', 'text': 'เรียง ทั้งหมด ขายดี'},
-            {'label': '💰 ราคาถูกที่สุด', 'text': 'เรียง ทั้งหมด ราคาถูก'},
-            {'label': '⭐ คะแนนสูงสุด', 'text': 'เรียง ทั้งหมด คะแนน'},
-            {'label': '🆕 สินค้าใหม่', 'text': 'เรียง ทั้งหมด ใหม่'},
-            {'label': '🎯 กรองตามราคา', 'text': 'กรอง'},
-            {'label': '📊 สถิติสินค้า', 'text': 'สถิติ'}
-        ]
+        """แสดงวิธีค้นหาสินค้าแบบง่าย"""
+        guide_text = """🔍 ค้นหาสินค้า
+
+💬 พิมพ์สิ่งที่ต้องการ:
+• "มือถือ" "โทรศัพท์" 
+• "เสื้อ" "กางเกง"
+• "รองเท้า" "กระเป๋า"
+
+💡 หรือเลือกหมวดด้านล่าง"""
         
-        quick_replies = self._create_modern_quick_reply(search_options)
-        
-        guide_text = """🔍 **คู่มือการค้นหาสินค้า**
-
-🎯 **วิธีการค้นหา**:
-• พิมพ์ชื่อสินค้าที่ต้องการ เช่น "อาหารแมว"
-• ใช้รหัสสินค้า เช่น "รหัส PROD001"
-• เลือกหมวดหมู่จากปุ่มด้านล่าง
-
-⚡ **คำสั่งขั้นสูง**:
-• `กรอง [สินค้า] ราคา:100-500` - กรองตามราคา
-• `เรียง [สินค้า] ขายดี` - เรียงตามยอดขาย
-• `หน้า2:[สินค้า]` - ดูหน้าถัดไป
-
-🎨 **เคล็ดลับ**: กดปุ่มด้านล่างเพื่อค้นหาแบบง่ายๆ!"""
+        # Quick Reply แบบง่าย เด็กใช้ได้
+        quick_replies = QuickReply(items=[
+            QuickReplyItem(action=MessageAction(label="📱 มือถือ", text="มือถือ")),
+            QuickReplyItem(action=MessageAction(label="👕 เสื้อผ้า", text="เสื้อผ้า")),
+            QuickReplyItem(action=MessageAction(label="👟 รองเท้า", text="รองเท้า")),
+            QuickReplyItem(action=MessageAction(label="🎒 กระเป๋า", text="กระเป๋า")),
+            QuickReplyItem(action=MessageAction(label="💻 คอมพิวเตอร์", text="คอมพิวเตอร์")),
+            QuickReplyItem(action=MessageAction(label="🏠 ของใช้บ้าน", text="ของใช้บ้าน")),
+            QuickReplyItem(action=MessageAction(label="🔥 ขายดี", text="ขายดี")),
+            QuickReplyItem(action=MessageAction(label="💰 โปรโมชั่น", text="โปรโมชั่น"))
+        ])
         
         self.line_bot_api.reply_message(
             ReplyMessageRequest(
