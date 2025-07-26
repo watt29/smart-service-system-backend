@@ -1106,33 +1106,34 @@ class AffiliateLineHandler:
     
     def _show_categories(self, event):
         """แสดงหมวดหมู่สินค้าแบบง่าย"""
-        category_text = """📋 หมวดหมู่สินค้า
+        try:
+            category_text = """📋 หมวดหมู่สินค้า
 
 💬 กดเลือกหมวดที่สนใจ:"""
-        
-        # Quick Reply แบบง่าย เด็กใช้ได้
-        quick_replies = QuickReply(items=[
-            QuickReplyItem(action=MessageAction(label="📱 มือถือ", text="มือถือ")),
-            QuickReplyItem(action=MessageAction(label="👕 เสื้อผ้า", text="เสื้อผ้า")),
-            QuickReplyItem(action=MessageAction(label="👟 รองเท้า", text="รองเท้า")),
-            QuickReplyItem(action=MessageAction(label="🎒 กระเป๋า", text="กระเป๋า")),
-            QuickReplyItem(action=MessageAction(label="💻 คอมพิวเตอร์", text="คอมพิวเตอร์")),
-            QuickReplyItem(action=MessageAction(label="🏠 ของใช้บ้าน", text="ของใช้บ้าน")),
-            QuickReplyItem(action=MessageAction(label="🎮 เกมส์", text="เกมส์")),
-            QuickReplyItem(action=MessageAction(label="📚 หนังสือ", text="หนังสือ"))
-        ])
-        
-        self.line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[TextMessage(text=category_text, quick_reply=quick_replies)]
+            
+            # Quick Reply แบบง่าย เด็กใช้ได้
+            quick_replies = QuickReply(items=[
+                QuickReplyItem(action=MessageAction(label="📱 มือถือ", text="มือถือ")),
+                QuickReplyItem(action=MessageAction(label="👕 เสื้อผ้า", text="เสื้อผ้า")),
+                QuickReplyItem(action=MessageAction(label="👟 รองเท้า", text="รองเท้า")),
+                QuickReplyItem(action=MessageAction(label="🎒 กระเป๋า", text="กระเป๋า")),
+                QuickReplyItem(action=MessageAction(label="💻 คอมพิวเตอร์", text="คอมพิวเตอร์")),
+                QuickReplyItem(action=MessageAction(label="🏠 ของใช้บ้าน", text="ของใช้บ้าน")),
+                QuickReplyItem(action=MessageAction(label="🎮 เกมส์", text="เกมส์")),
+                QuickReplyItem(action=MessageAction(label="📚 หนังสือ", text="หนังสือ"))
+            ])
+            
+            self.line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=category_text, quick_reply=quick_replies)]
+                )
             )
-        )
         except Exception:
             # Fallback หากเกิดข้อผิดพลาด
-            category_text = "📋 หมวดหมู่สินค้า
+            category_text = """📋 หมวดหมู่สินค้า
 
-💬 กดเลือกหมวดที่สนใจ:"
+💬 กดเลือกหมวดที่สนใจ:"""
             
             quick_replies = QuickReply(items=[
                 QuickReplyItem(action=MessageAction(label="📱 มือถือ", text="มือถือ")),
