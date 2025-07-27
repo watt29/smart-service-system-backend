@@ -166,6 +166,13 @@ class AffiliateLineHandler:
             if text in ["ค้นหา", "หา", "ซื้อ", "ค้นหาสินค้า", "ค้นหา สินค้า", "search"]:
                 self._show_search_guide(event)
                 return
+            
+            # รองรับคำค้นหาที่เกี่ยวข้องกับโทรศัพท์/มือถือ
+            mobile_keywords = ["มือถือ", "โทรศัพท์", "smartphone", "iphone", "samsung", "android"]
+            if any(keyword in text.lower() for keyword in mobile_keywords):
+                # แสดงข้อความแนะนำเมื่อไม่มีสินค้าประเภทนี้
+                self._handle_mobile_search_suggestion(event, text)
+                return
                 
             if text in ["หมวด", "หมวดหมู่", "ประเภท", "หมวดหมู่สินค้า", "หมวด สินค้า", "category"]:
                 self._show_categories(event)
@@ -1919,6 +1926,39 @@ class AffiliateLineHandler:
             ReplyMessageRequest(
                 reply_token=event.reply_token,
                 messages=[TextMessage(text=guide_text, quick_reply=quick_replies)]
+            )
+        )
+    
+    def _handle_mobile_search_suggestion(self, event, search_term):
+        """แสดงข้อความแนะนำเมื่อค้นหาโทรศัพท์/มือถือ"""
+        suggestion_text = f"""📱 ไม่พบสินค้า '{search_term}'
+
+🔄 ระบบกำลังอัปเดตสินค้าประเภทโทรศัพท์มือถือ
+
+💡 ลองค้นหาสินค้าประเภทอื่น:
+• 'สัตว์เลี้ยง' - อาหารแมว, อาหารหมา
+• 'ความงาม' - ครีม, เซรั่ม  
+• 'แฟชั่น' - เสื้อผ้า, รองเท้า
+• 'เทคโนโลยี' - หูฟัง, แท็บเล็ต
+
+หรือพิมพ์ 'หมวดหมู่' เพื่อดูสินค้าทั้งหมด"""
+        
+        # Quick Reply สำหรับหมวดหมู่ที่มีสินค้า
+        quick_replies = QuickReply(items=[
+            QuickReplyItem(action=MessageAction(label="🐾 สัตว์เลี้ยง", text="สัตว์เลี้ยง")),
+            QuickReplyItem(action=MessageAction(label="💄 ความงาม", text="ความงาม")),
+            QuickReplyItem(action=MessageAction(label="👕 แฟชั่น", text="แฟชั่น")),
+            QuickReplyItem(action=MessageAction(label="💻 เทคโนโลยี", text="เทคโนโลยี")),
+            QuickReplyItem(action=MessageAction(label="🏠 ของใช้บ้าน", text="ของใช้บ้าน")),
+            QuickReplyItem(action=MessageAction(label="📋 หมวดหมู่", text="หมวดหมู่")),
+            QuickReplyItem(action=MessageAction(label="🔥 ขายดี", text="ขายดี")),
+            QuickReplyItem(action=MessageAction(label="🏠 หน้าหลัก", text="หน้าหลัก"))
+        ])
+        
+        self.line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=suggestion_text, quick_reply=quick_replies)]
             )
         )
     
