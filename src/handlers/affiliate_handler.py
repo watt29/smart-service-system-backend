@@ -26,6 +26,7 @@ from ..utils.bulk_importer import bulk_importer
 from ..utils.ai_recommender import ai_recommender
 from ..utils.smart_category_manager import SmartCategoryManager
 from ..utils.smart_recommendation_engine import SmartRecommendationEngine
+from ..utils.csv_importer_admin import AdminCSVImporter
 
 class AffiliateLineHandler:
     """คลาสสำหรับจัดการ LINE Bot messages สำหรับ Affiliate Products"""
@@ -34,8 +35,9 @@ class AffiliateLineHandler:
         self.admin_state = {}  # เก็บสถานะของแต่ละ user
         self.db = SupabaseDatabase()
         self.promo_generator = PromotionGenerator()
-        self.category_manager = SmartCategoryManager()
+        self.category_manager = SmartCategoryManager(self.db)
         self.recommendation_engine = SmartRecommendationEngine(self.db)
+        self.csv_importer = AdminCSVImporter(self.db)
         
         # ตั้งค่า LINE Bot API
         if config.LINE_CHANNEL_ACCESS_TOKEN and config.LINE_CHANNEL_SECRET:
@@ -1702,41 +1704,82 @@ class AffiliateLineHandler:
             if command.lower() == 'sample':
                 # สร้างไฟล์ตัวอย่าง CSV
                 sample_path = "sample_products.csv"
-                message = bulk_importer.create_sample_csv(sample_path)
+                success = self.csv_importer.create_sample_csv(sample_path)
                 
-                response = f"📁 **ไฟล์ตัวอย่างพร้อมใช้งาน**\n\n"
-                response += f"{message}\n\n"
-                response += f"📋 **วิธีใช้งาน:**\n"
-                response += f"1. ดาวน์โหลดไฟล์ `{sample_path}`\n"
-                response += f"2. แก้ไขข้อมูลสินค้าตามต้องการ\n"
-                response += f"3. อัปโหลดไฟล์ไปยังเซิร์ฟเวอร์\n"
-                response += f"4. ใช้คำสั่ง: `bulk-import [URL]`\n\n"
-                response += f"🔧 **คอลัมน์ที่รองรับ:**\n"
-                response += f"• product_name, category, price (จำเป็น)\n"
-                response += f"• description, brand, rating, tags\n"
-                response += f"• affiliate_link, image_url\n"
-                response += f"• commission_rate, is_featured"
+                if success:
+                    response = f"📁 **ไฟล์ตัวอย่างพร้อมใช้งาน**\n\n"
+                    response += f"✅ สร้างไฟล์ `{sample_path}` สำเร็จ\n\n"
+                    response += f"📋 **วิธีใช้งาน:**\n"
+                    response += f"1. ดาวน์โหลดไฟล์ `{sample_path}`\n"
+                    response += f"2. แก้ไขข้อมูลสินค้าตามต้องการ\n"
+                    response += f"3. ใช้คำสั่ง: `import-csv import_products.csv`\n\n"
+                    response += f"🔧 **คอลัมน์ที่รองรับ:**\n"
+                    response += f"• product_name, category, price (จำเป็น)\n"
+                    response += f"• description, brand, rating, tags\n"
+                    response += f"• affiliate_link, shop_name\n"
+                    response += f"• sold_count, commission_rate"
+                else:
+                    response = "❌ ไม่สามารถสร้างไฟล์ตัวอย่างได้"
                 
                 self._reply_text(event, response)
                 return
             
-            # ตรวจสอบว่าเป็น URL หรือไม่
-            if command.startswith('http'):
-                response = f"🚧 **ฟีเจอร์กำลังพัฒนา**\n\n"
-                response += f"ขณะนี้ยังไม่รองรับการนำเข้าจาก URL\n"
-                response += f"กรุณาใช้คำสั่ง: `bulk-import sample`\n"
-                response += f"เพื่อสร้างไฟล์ตัวอย่างก่อน"
-            else:
-                response = f"❌ **คำสั่งไม่ถูกต้อง**\n\n"
-                response += f"💡 **วิธีใช้งาน:**\n"
-                response += f"• `bulk-import sample` - สร้างไฟล์ตัวอย่าง\n"
-                response += f"• `bulk-import [URL]` - นำเข้าจาก URL (กำลังพัฒนา)"
+            # ตรวจสอบว่าเป็นการ import ไฟล์ CSV
+            if command.lower().startswith('import-csv'):
+                # ใช้ไฟล์ที่มีอยู่แล้ว
+                csv_files = ['import_products.csv', 'import_products_fixed.csv']
+                
+                for csv_file in csv_files:
+                    try:
+                        results = self.csv_importer.import_csv_file(csv_file, skip_duplicates=True)
+                        summary = self.csv_importer.get_import_summary(results)
+                        
+                        if results['success'] > 0:
+                            response = f"🎉 **นำเข้าข้อมูลสำเร็จ!**\n\n"
+                            response += summary
+                            response += f"\n🔄 กำลังอัปเดตระบบหมวดหมู่..."
+                            self._reply_text(event, response)
+                            
+                            # อัปเดต category manager
+                            self._update_category_system()
+                            return
+                        
+                    except FileNotFoundError:
+                        continue
+                
+                # ถ้าไม่เจอไฟล์ไหน
+                response = f"❌ **ไม่พบไฟล์ CSV**\n\n"
+                response += f"💡 **วิธีแก้ไข:**\n"
+                response += f"• ใช้คำสั่ง: `bulk-import sample`\n"
+                response += f"• หรือวางไฟล์ CSV ในโฟลเดอร์ระบบ"
+                self._reply_text(event, response)
+                return
+                
+            # คำสั่งอื่น ๆ
+            response = f"❌ **คำสั่งไม่ถูกต้อง**\n\n"
+            response += f"💡 **วิธีใช้งาน:**\n"
+            response += f"• `bulk-import sample` - สร้างไฟล์ตัวอย่าง\n"
+            response += f"• `import-csv` - นำเข้าข้อมูลจากไฟล์ CSV"
             
             self._reply_text(event, response)
                 
         except Exception as e:
             print(f"[ERROR] Bulk import error: {e}")
             self._reply_text(event, "❌ เกิดข้อผิดพลาดในการนำเข้าข้อมูล")
+    
+    def _update_category_system(self):
+        """อัปเดตระบบหมวดหมู่ให้ตรงกับข้อมูลในฐานข้อมูล"""
+        try:
+            # ดึงหมวดหมู่ทั้งหมดจากฐานข้อมูล
+            categories = self.db.get_all_categories()
+            
+            if categories:
+                # อัปเดต Smart Category Manager
+                self.category_manager.update_categories_from_database(categories)
+                print(f"[INFO] อัปเดตระบบหมวดหมู่แล้ว: {len(categories)} หมวดหมู่")
+            
+        except Exception as e:
+            print(f"[ERROR] ไม่สามารถอัปเดตระบบหมวดหมู่ได้: {e}")
     
     def _show_ai_recommendations(self, event, user_id: str, context: str = ""):
         """แสดงคำแนะนำสินค้าด้วย AI"""

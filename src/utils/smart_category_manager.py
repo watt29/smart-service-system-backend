@@ -11,8 +11,9 @@ import logging
 class SmartCategoryManager:
     """คลาสจัดการหมวดหมู่อัจฉริยะ"""
     
-    def __init__(self):
+    def __init__(self, db_instance=None):
         self.logger = logging.getLogger(__name__)
+        self.db = db_instance
         
         # กำหนดหมวดหมู่และไอคอน
         self.categories = {
@@ -146,6 +147,10 @@ class SmartCategoryManager:
                 "❤️ ดูแลสัตว์เลี้ยงด้วยใจ {product} ราคาพิเศษ"
             ]
         }
+        
+        # อัปเดตหมวดหมู่จากฐานข้อมูล
+        if self.db:
+            self._initialize_from_database()
     
     def get_category_info(self, category_name: str) -> Optional[Dict]:
         """ดึงข้อมูลหมวดหมู่"""
@@ -168,19 +173,26 @@ class SmartCategoryManager:
         """สร้างการแสดงหมวดหมู่แบบอัจฉริยะ"""
         categories_list = []
         
-        # จัดเรียงตาม priority
-        sorted_categories = sorted(
-            self.categories.items(), 
-            key=lambda x: x[1]['priority']
-        )
+        # ดึงหมวดหมู่จากฐานข้อมูลก่อน
+        db_categories = self.get_categories_from_database()
         
-        for category, info in sorted_categories:
+        # สร้างรายการแสดง โดยให้หมวดหมู่ที่มีในฐานข้อมูลมาก่อน
+        for category in db_categories:
+            info = self.categories.get(category, {
+                'icon': '📦',
+                'priority': 3,
+                'color': '#6B7280'
+            })
+            
             categories_list.append({
                 'name': category,
                 'display': f"{info['icon']} {category}",
                 'priority': info['priority'],
                 'color': info['color']
             })
+        
+        # จัดเรียงตาม priority
+        categories_list.sort(key=lambda x: x['priority'])
         
         return categories_list
     
@@ -287,3 +299,79 @@ class SmartCategoryManager:
                 })
         
         return carousel_items
+    
+    def update_categories_from_database(self, db_categories: List[str]):
+        """อัปเดตหมวดหมู่จากฐานข้อมูลจริง"""
+        try:
+            # เพิ่มหมวดหมู่ใหม่ที่ไม่มีในระบบ
+            for category in db_categories:
+                if category not in self.categories:
+                    # สร้างข้อมูลหมวดหมู่ใหม่
+                    icon_map = {
+                        'โทรศัพท์มือถือ': '📱',
+                        'ความงาม': '💄',
+                        'เสื้อผ้าผู้ชาย': '👔',
+                        'เสื้อผ้าผู้หญิง': '👗',
+                        'รองเท้าผู้ชาย': '👞',
+                        'รองเท้าผู้หญิง': '👠',
+                        'นาฬิกาแว่นตา': '⌚',
+                        'กล้อง': '📷',
+                        'คอมพิวเตอร์': '💻',
+                        'สุขภาพ': '💊',
+                        'อาหารเครื่องดื่ม': '🍽️',
+                        'เครื่องใช้ไฟฟ้า': '🔌',
+                        'กีฬา': '⚽'
+                    }
+                    
+                    self.categories[category] = {
+                        'icon': icon_map.get(category, '📦'),
+                        'keywords': [category.lower()],
+                        'priority': 2,  # ค่าเริ่มต้น
+                        'promo_style': 'general',
+                        'color': '#6B7280'  # สีเทา
+                    }
+            
+            self.logger.info(f"อัปเดตหมวดหมู่แล้ว: {len(db_categories)} หมวดหมู่")
+            
+        except Exception as e:
+            self.logger.error(f"Error updating categories from database: {e}")
+    
+    def get_available_categories(self) -> List[str]:
+        """ดึงรายการหมวดหมู่ที่มีอยู่ในระบบ"""
+        return list(self.categories.keys())
+    
+    def _initialize_from_database(self):
+        """เริ่มต้นระบบหมวดหมู่จากฐานข้อมูล"""
+        try:
+            if not self.db:
+                return
+                
+            # ดึงหมวดหมู่จากฐานข้อมูล
+            db_categories = self.db.get_categories()
+            
+            if db_categories:
+                self.update_categories_from_database(db_categories)
+                self.logger.info(f"โหลดหมวดหมู่จากฐานข้อมูล: {len(db_categories)} หมวดหมู่")
+            else:
+                self.logger.warning("ไม่พบหมวดหมู่ในฐานข้อมูล ใช้หมวดหมู่เริ่มต้น")
+                
+        except Exception as e:
+            self.logger.error(f"ไม่สามารถโหลดหมวดหมู่จากฐานข้อมูล: {e}")
+    
+    def get_categories_from_database(self) -> List[str]:
+        """ดึงหมวดหมู่จากฐานข้อมูลแบบ real-time"""
+        try:
+            if not self.db:
+                return list(self.categories.keys())
+                
+            db_categories = self.db.get_categories()
+            
+            # รวมหมวดหมู่จากฐานข้อมูลและหมวดหมู่เริ่มต้น
+            all_categories = set(db_categories)
+            all_categories.update(self.categories.keys())
+            
+            return sorted(list(all_categories))
+            
+        except Exception as e:
+            self.logger.error(f"Error getting categories from database: {e}")
+            return list(self.categories.keys())
