@@ -1146,22 +1146,40 @@ class AffiliateLineHandler:
         self._reply_text(event, stats_text)
     
     def _show_categories(self, event):
-        """แสดงหมวดหมู่สินค้าแบบ Smart Category"""
+        """แสดงหมวดหมู่สินค้าที่มีข้อมูลจริงเท่านั้น"""
         try:
-            # ใช้ Smart Category Manager
-            smart_categories = self.category_manager.get_smart_categories_display()
+            # ดึงหมวดหมู่ที่มีสินค้าจริงจากฐานข้อมูล
+            categories = self.db.get_categories()
             
-            category_text = """📋 หมวดหมู่สินค้า - Smart Category
-
-💬 กดเลือกหมวดที่สนใจ:"""
+            if not categories:
+                self._reply_text(event, "❌ ไม่พบหมวดหมู่สินค้าในระบบ")
+                return
             
-            # สร้าง Quick Reply จาก Smart Categories
+            # สร้างข้อความแสดงหมวดหมู่
+            category_text = f"📋 หมวดหมู่สินค้า ({len(categories)} หมวดหมู่)\n\n"
+            category_text += "💬 กดเลือกหมวดหมู่ที่สนใจ:\n\n"
+            
+            # แสดงรายการหมวดหมู่
+            for i, category in enumerate(categories, 1):
+                # นับจำนวนสินค้าในแต่ละหมวดหมู่
+                results = self.db.search_products("", category=category, limit=1)
+                count = results.get('total', 0)
+                
+                # เลือก icon ตามหมวดหมู่
+                icon = self._get_category_icon(category)
+                
+                category_text += f"{icon} {category} ({count} รายการ)\n"
+            
+            # สร้าง Quick Reply เฉพาะหมวดหมู่ที่มีสินค้า
             quick_reply_items = []
-            for cat in smart_categories[:8]:  # จำกัด 8 ปุ่ม
+            
+            # เพิ่มหมวดหมู่ที่มีสินค้า (สูงสุด 13 ปุ่ม - เหลือไว้สำหรับปุ่มพิเศษ)
+            for category in categories[:13]:
+                icon = self._get_category_icon(category)
                 quick_reply_items.append(
                     QuickReplyItem(action=MessageAction(
-                        label=cat['display'], 
-                        text=cat['name']
+                        label=f"{icon} {category}", 
+                        text=category
                     ))
                 )
             
@@ -1173,74 +1191,32 @@ class AffiliateLineHandler:
                     messages=[TextMessage(text=category_text, quick_reply=quick_replies)]
                 )
             )
-        except Exception as e:
-            print(f"Error showing smart categories: {e}")
-            # Fallback หากเกิดข้อผิดพลาด
-            category_text = """📋 หมวดหมู่สินค้า
-
-💬 กดเลือกหมวดที่สนใจ:"""
-            
-            quick_replies = QuickReply(items=[
-                QuickReplyItem(action=MessageAction(label="📱 โทรศัพท์มือถือ", text="โทรศัพท์มือถือ")),
-                QuickReplyItem(action=MessageAction(label="💄 ความงาม", text="ความงาม")),
-                QuickReplyItem(action=MessageAction(label="👕 แฟชั่น", text="แฟชั่น")),
-                QuickReplyItem(action=MessageAction(label="🐾 สัตว์เลี้ยง", text="สัตว์เลี้ยง")),
-                QuickReplyItem(action=MessageAction(label="🎮 เกมมิ่ง", text="เกมมิ่ง")),
-                QuickReplyItem(action=MessageAction(label="💻 คอมพิวเตอร์", text="คอมพิวเตอร์")),
-                QuickReplyItem(action=MessageAction(label="💊 สุขภาพ", text="สุขภาพ")),
-                QuickReplyItem(action=MessageAction(label="🎯 แนะนำ", text="แนะนำ"))
-            ])
-            
-            self.line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=category_text, quick_reply=quick_replies)]
-                )
-            )
-            
-            # เพิ่มปุ่มพิเศษ
-            quick_reply_items.extend([
-                QuickReplyItem(action=MessageAction(label="🔥 ขายดีทั้งหมด", text="เรียง ทั้งหมด ขายดี")),
-                QuickReplyItem(action=MessageAction(label="💰 ราคาดี", text="เรียง ทั้งหมด ราคาถูก")),
-                QuickReplyItem(action=MessageAction(label="⭐ คะแนนสูง", text="เรียง ทั้งหมด คะแนน"))
-            ])
-            
-            quick_replies = QuickReply(items=quick_reply_items)
-            
-            # สร้างข้อความแสดงผล
-            categories_text = "🎯 หมวดหมู่สินค้า (เรียงตามความนิยม):\n\n"
-            
-            # แสดงหมวดหมู่ฮิต
-            if hot_categories:
-                categories_text += "🔥 **หมวดหมู่ฮิต**:\n"
-                for cat in hot_categories[:5]:
-                    categories_text += f"• {cat['name']} ({cat['product_count']} รายการ, คะแนน {cat['popularity_score']})\n"
-                categories_text += "\n"
-            
-            # แสดงหมวดหมู่ยอดนิยม
-            if popular_categories:
-                categories_text += "⭐ **หมวดหมู่ยอดนิยม**:\n"
-                for cat in popular_categories[:3]:
-                    categories_text += f"• {cat['name']} ({cat['product_count']} รายการ)\n"
-                categories_text += "\n"
-            
-            categories_text += f"🛍️ รวมทั้งหมด {len(categories_with_stats)} หมวดหมู่\n"
-            categories_text += f"💰 ช่วงราคา: {price_range['min_price']:,.0f} - {price_range['max_price']:,.0f} บาท\n\n"
-            
-            categories_text += "📱 **กดปุ่มด้านล่างเพื่อเลือก** หรือพิมพ์:\n"
-            categories_text += "• หมวด [ชื่อหมวดหมู่] เช่น 'หมวด ความงาม'\n"
-            categories_text += "• เรียง [คำค้น] หมวดหมู่ เช่น 'เรียง แมว หมวดหมู่'"
-            
-            self.line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=categories_text, quick_reply=quick_replies)]
-                )
-            )
             
         except Exception as e:
-            print(f"[ERROR] Error showing smart categories: {e}")
+            print(f"Error showing categories: {e}")
             self._reply_text(event, "❌ เกิดข้อผิดพลาดในการแสดงหมวดหมู่")
+    
+    def _get_category_icon(self, category: str) -> str:
+        """ดึง icon สำหรับหมวดหมู่"""
+        icon_map = {
+            'โทรศัพท์มือถือ': '📱',
+            'ความงาม': '💄',
+            'เสื้อผ้าผู้ชาย': '👔',
+            'เสื้อผ้าผู้หญิง': '👗',
+            'รองเท้าผู้ชาย': '👞',
+            'รองเท้าผู้หญิง': '👠',
+            'นาฬิกาแว่นตา': '⌚',
+            'กล้อง': '📷',
+            'คอมพิวเตอร์': '💻',
+            'สุขภาพ': '💊',
+            'อาหารเครื่องดื่ม': '🍽️',
+            'เครื่องใช้ไฟฟ้า': '🔌',
+            'กีฬา': '⚽',
+            'สัตว์เลี้ยง': '🐾',
+            'กระเป๋า': '🎒',
+            'เกมมิ่ง': '🎮'
+        }
+        return icon_map.get(category, '📦')
     
     def _browse_category(self, event, category_name: str, user_id: str):
         """เรียกดูสินค้าในหมวดหมู่เฉพาะ"""
