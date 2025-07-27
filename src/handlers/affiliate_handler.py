@@ -24,6 +24,8 @@ from ..utils.promotion_generator import PromotionGenerator
 from ..utils.rich_menu_manager import rich_menu_manager
 from ..utils.bulk_importer import bulk_importer
 from ..utils.ai_recommender import ai_recommender
+from ..utils.smart_category_manager import SmartCategoryManager
+from ..utils.smart_recommendation_engine import SmartRecommendationEngine
 
 class AffiliateLineHandler:
     """คลาสสำหรับจัดการ LINE Bot messages สำหรับ Affiliate Products"""
@@ -32,6 +34,8 @@ class AffiliateLineHandler:
         self.admin_state = {}  # เก็บสถานะของแต่ละ user
         self.db = SupabaseDatabase()
         self.promo_generator = PromotionGenerator()
+        self.category_manager = SmartCategoryManager()
+        self.recommendation_engine = SmartRecommendationEngine(self.db)
         
         # ตั้งค่า LINE Bot API
         if config.LINE_CHANNEL_ACCESS_TOKEN and config.LINE_CHANNEL_SECRET:
@@ -167,11 +171,11 @@ class AffiliateLineHandler:
                 self._show_search_guide(event)
                 return
             
-            # รองรับคำค้นหาที่เกี่ยวข้องกับโทรศัพท์/มือถือ
-            mobile_keywords = ["มือถือ", "โทรศัพท์", "smartphone", "iphone", "samsung", "android"]
-            if any(keyword in text.lower() for keyword in mobile_keywords):
-                # แสดงข้อความแนะนำเมื่อไม่มีสินค้าประเภทนี้
-                self._handle_mobile_search_suggestion(event, text)
+            # ใช้ Smart Category Manager ตรวจจับหมวดหมู่จากคำค้นหา
+            detected_categories = self.category_manager.detect_category_from_query(text)
+            if detected_categories:
+                # ค้นหาสินค้าในหมวดหมู่ที่ตรวจจับได้
+                self._handle_smart_category_search(event, text, detected_categories)
                 return
                 
             if text in ["หมวด", "หมวดหมู่", "ประเภท", "หมวดหมู่สินค้า", "หมวด สินค้า", "category"]:
@@ -196,6 +200,15 @@ class AffiliateLineHandler:
                 
             if text in ["หน้าแรก", "กลับ", "เริ่มใหม่", "home", "เมนูหลัก", "เมนู", "🏠 หน้าหลัก"]:
                 self._show_home_menu(event)
+                return
+            
+            # ระบบแนะนำสินค้าอัจฉริยะ
+            if text in ["แนะนำ", "แนะนำสินค้า", "สินค้าแนะนำ", "recommend"]:
+                self._show_personalized_recommendations(event, user_id)
+                return
+            
+            if text in ["ทรนด์", "กำลังมาแรง", "trending", "hot"]:
+                self._show_trending_products(event)
                 return
             
             # คำสั่ง Admin แบบง่าย ๆ (ต้องเป็น Admin เท่านั้น)
@@ -1131,23 +1144,26 @@ class AffiliateLineHandler:
         self._reply_text(event, stats_text)
     
     def _show_categories(self, event):
-        """แสดงหมวดหมู่สินค้าแบบง่าย"""
+        """แสดงหมวดหมู่สินค้าแบบ Smart Category"""
         try:
-            category_text = """📋 หมวดหมู่สินค้า
+            # ใช้ Smart Category Manager
+            smart_categories = self.category_manager.get_smart_categories_display()
+            
+            category_text = """📋 หมวดหมู่สินค้า - Smart Category
 
 💬 กดเลือกหมวดที่สนใจ:"""
             
-            # Quick Reply แบบง่าย เด็กใช้ได้
-            quick_replies = QuickReply(items=[
-                QuickReplyItem(action=MessageAction(label="📱 มือถือ", text="มือถือ")),
-                QuickReplyItem(action=MessageAction(label="👕 เสื้อผ้า", text="เสื้อผ้า")),
-                QuickReplyItem(action=MessageAction(label="👟 รองเท้า", text="รองเท้า")),
-                QuickReplyItem(action=MessageAction(label="🎒 กระเป๋า", text="กระเป๋า")),
-                QuickReplyItem(action=MessageAction(label="💻 คอมพิวเตอร์", text="คอมพิวเตอร์")),
-                QuickReplyItem(action=MessageAction(label="🏠 ของใช้บ้าน", text="ของใช้บ้าน")),
-                QuickReplyItem(action=MessageAction(label="🎮 เกมส์", text="เกมส์")),
-                QuickReplyItem(action=MessageAction(label="📚 หนังสือ", text="หนังสือ"))
-            ])
+            # สร้าง Quick Reply จาก Smart Categories
+            quick_reply_items = []
+            for cat in smart_categories[:8]:  # จำกัด 8 ปุ่ม
+                quick_reply_items.append(
+                    QuickReplyItem(action=MessageAction(
+                        label=cat['display'], 
+                        text=cat['name']
+                    ))
+                )
+            
+            quick_replies = QuickReply(items=quick_reply_items)
             
             self.line_bot_api.reply_message(
                 ReplyMessageRequest(
@@ -1155,21 +1171,22 @@ class AffiliateLineHandler:
                     messages=[TextMessage(text=category_text, quick_reply=quick_replies)]
                 )
             )
-        except Exception:
+        except Exception as e:
+            print(f"Error showing smart categories: {e}")
             # Fallback หากเกิดข้อผิดพลาด
             category_text = """📋 หมวดหมู่สินค้า
 
 💬 กดเลือกหมวดที่สนใจ:"""
             
             quick_replies = QuickReply(items=[
-                QuickReplyItem(action=MessageAction(label="📱 มือถือ", text="มือถือ")),
-                QuickReplyItem(action=MessageAction(label="👕 เสื้อผ้า", text="เสื้อผ้า")),
-                QuickReplyItem(action=MessageAction(label="👟 รองเท้า", text="รองเท้า")),
-                QuickReplyItem(action=MessageAction(label="🎒 กระเป๋า", text="กระเป๋า")),
+                QuickReplyItem(action=MessageAction(label="📱 โทรศัพท์มือถือ", text="โทรศัพท์มือถือ")),
+                QuickReplyItem(action=MessageAction(label="💄 ความงาม", text="ความงาม")),
+                QuickReplyItem(action=MessageAction(label="👕 แฟชั่น", text="แฟชั่น")),
+                QuickReplyItem(action=MessageAction(label="🐾 สัตว์เลี้ยง", text="สัตว์เลี้ยง")),
+                QuickReplyItem(action=MessageAction(label="🎮 เกมมิ่ง", text="เกมมิ่ง")),
                 QuickReplyItem(action=MessageAction(label="💻 คอมพิวเตอร์", text="คอมพิวเตอร์")),
-                QuickReplyItem(action=MessageAction(label="🏠 ของใช้บ้าน", text="ของใช้บ้าน")),
-                QuickReplyItem(action=MessageAction(label="🎮 เกมส์", text="เกมส์")),
-                QuickReplyItem(action=MessageAction(label="📚 หนังสือ", text="หนังสือ"))
+                QuickReplyItem(action=MessageAction(label="💊 สุขภาพ", text="สุขภาพ")),
+                QuickReplyItem(action=MessageAction(label="🎯 แนะนำ", text="แนะนำ"))
             ])
             
             self.line_bot_api.reply_message(
@@ -1961,6 +1978,218 @@ class AffiliateLineHandler:
                 messages=[TextMessage(text=suggestion_text, quick_reply=quick_replies)]
             )
         )
+    
+    def _handle_smart_category_search(self, event, search_query: str, detected_categories: List[str]):
+        """จัดการการค้นหาด้วย Smart Category"""
+        try:
+            # ค้นหาสินค้าทั่วไปก่อน
+            search_results = self.db.search_products(search_query, limit=5)
+            products = search_results.get('products', [])
+            
+            if products:
+                # พบสินค้า - แสดงผลปกติพร้อม Smart Quick Reply
+                self._show_search_results_with_smart_reply(event, search_query, products, detected_categories)
+            else:
+                # ไม่พบสินค้า - แสดงข้อแนะนำอัจฉริยะ
+                self._show_smart_no_results_suggestion(event, search_query, detected_categories)
+                
+        except Exception as e:
+            print(f"Error in smart category search: {e}")
+            # Fallback ไปแสดงข้อความแนะนำแบบเดิม
+            if "มือถือ" in search_query or "โทรศัพท์" in search_query:
+                self._handle_mobile_search_suggestion(event, search_query)
+            else:
+                self._show_search_guide(event)
+    
+    def _show_search_results_with_smart_reply(self, event, query: str, products: List[Dict], categories: List[str]):
+        """แสดงผลการค้นหาพร้อม Smart Quick Reply"""
+        if not products:
+            return
+        
+        # สร้าง Flex Message แสดงสินค้า
+        if len(products) == 1:
+            message = self._create_single_product_flex(products[0])
+        else:
+            message = self._create_product_carousel(products, query)
+        
+        # สร้าง Smart Quick Reply
+        quick_reply_items = self.category_manager.get_category_based_quick_reply(categories)
+        quick_replies = QuickReply(items=[
+            QuickReplyItem(action=MessageAction(label=item['label'], text=item['text']))
+            for item in quick_reply_items
+        ])
+        
+        # ส่งข้อความ
+        if isinstance(message, FlexMessage):
+            message.quick_reply = quick_replies
+            self.line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[message]
+                )
+            )
+        else:
+            # Fallback เป็น text message
+            result_text = f"🔍 พบ {len(products)} รายการสำหรับ '{query}':\\n\\n"
+            for i, product in enumerate(products, 1):
+                result_text += f"{i}. {product.get('product_name', 'N/A')} - {product.get('price', 0):,.0f} บาท\\n"
+            
+            self.line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=result_text, quick_reply=quick_replies)]
+                )
+            )
+    
+    def _show_smart_no_results_suggestion(self, event, query: str, detected_categories: List[str]):
+        """แสดงข้อแนะนำอัจฉริยะเมื่อไม่พบสินค้า"""
+        suggestions = self.category_manager.get_smart_search_suggestions(query)
+        
+        # สร้างข้อความแนะนำ
+        suggestion_text = f"🔍 ไม่พบสินค้า '{query}'\\n\\n"
+        
+        if detected_categories:
+            suggestion_text += f"📂 หมวดหมู่ที่เกี่ยวข้อง: {', '.join(detected_categories)}\\n\\n"
+        
+        if suggestions['alternative_searches']:
+            suggestion_text += "💡 ลองค้นหาคำอื่น:\\n"
+            for alt in suggestions['alternative_searches'][:3]:
+                suggestion_text += f"• '{alt}'\\n"
+            suggestion_text += "\\n"
+        
+        if suggestions['related_categories']:
+            suggestion_text += "🎯 หมวดหมู่แนะนำ:\\n"
+            for cat in suggestions['related_categories'][:4]:
+                cat_info = self.category_manager.get_category_info(cat)
+                icon = cat_info['icon'] if cat_info else '📦'
+                suggestion_text += f"• {icon} {cat}\\n"
+        
+        # สร้าง Quick Reply อัจฉริยะ
+        quick_reply_items = self.category_manager.get_category_based_quick_reply(
+            suggestions['related_categories'][:5]
+        )
+        quick_replies = QuickReply(items=[
+            QuickReplyItem(action=MessageAction(label=item['label'], text=item['text']))
+            for item in quick_reply_items
+        ])
+        
+        self.line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=suggestion_text, quick_reply=quick_replies)]
+            )
+        )
+    
+    def _show_personalized_recommendations(self, event, user_id: str):
+        """แสดงสินค้าแนะนำส่วนบุคคล"""
+        try:
+            # บันทึกความสนใจของผู้ใช้
+            self.recommendation_engine.track_user_interest(user_id, 'view', 'general')
+            
+            # ดึงสินค้าแนะนำ
+            recommendations = self.recommendation_engine.get_personalized_recommendations(user_id, limit=5)
+            
+            if not recommendations:
+                # ถ้าไม่มีสินค้าแนะนำ แสดงสินค้าขายดี
+                recommendations = self.recommendation_engine.get_trending_products(limit=5)
+            
+            if recommendations:
+                # สร้างข้อความแนะนำ
+                message_text = self.recommendation_engine.generate_recommendation_message(recommendations, user_id)
+                
+                # สร้าง Dynamic Quick Reply ตามสินค้าแนะนำ
+                quick_reply_items = self._create_dynamic_quick_reply(recommendations)
+                quick_replies = QuickReply(items=quick_reply_items)
+                
+                self.line_bot_api.reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[TextMessage(text=message_text, quick_reply=quick_replies)]
+                    )
+                )
+            else:
+                self._show_search_guide(event)
+                
+        except Exception as e:
+            print(f"Error showing personalized recommendations: {e}")
+            self._show_search_guide(event)
+    
+    def _show_trending_products(self, event):
+        """แสดงสินค้าที่กำลังมาแรง"""
+        try:
+            trending_products = self.recommendation_engine.get_trending_products(limit=5)
+            
+            if trending_products:
+                message_text = "🔥 สินค้าที่กำลังมาแรง\\n\\n"
+                
+                for i, product in enumerate(trending_products, 1):
+                    name = product.get('product_name', 'N/A')
+                    price = product.get('price', 0)
+                    sold_count = product.get('sold_count', 0)
+                    rating = product.get('rating', 0)
+                    
+                    message_text += f"{i}. {name}\\n"
+                    message_text += f"   💰 {price:,.0f} บาท | 🛒 ขายแล้ว {sold_count:,} ชิ้น"
+                    if rating > 0:
+                        message_text += f" | ⭐ {rating:.1f}"
+                    message_text += "\\n\\n"
+                
+                # สร้าง Quick Reply สำหรับหมวดหมู่ที่เกี่ยวข้อง
+                categories = list(set([p.get('category', '') for p in trending_products if p.get('category')]))
+                quick_reply_items = self.category_manager.get_category_based_quick_reply(categories)
+                quick_replies = QuickReply(items=[
+                    QuickReplyItem(action=MessageAction(label=item['label'], text=item['text']))
+                    for item in quick_reply_items
+                ])
+                
+                self.line_bot_api.reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[TextMessage(text=message_text, quick_reply=quick_replies)]
+                    )
+                )
+            else:
+                self._show_search_guide(event)
+                
+        except Exception as e:
+            print(f"Error showing trending products: {e}")
+            self._show_search_guide(event)
+    
+    def _create_dynamic_quick_reply(self, products: List[Dict]) -> List[QuickReplyItem]:
+        """สร้าง Quick Reply แบบ Dynamic ตามสินค้า"""
+        quick_reply_items = []
+        
+        # เพิ่มหมวดหมู่จากสินค้า
+        categories = list(set([p.get('category', '') for p in products if p.get('category')]))
+        
+        for category in categories[:4]:  # จำกัด 4 หมวดหมู่
+            cat_info = self.category_manager.get_category_info(category)
+            if cat_info:
+                quick_reply_items.append(
+                    QuickReplyItem(action=MessageAction(
+                        label=f"{cat_info['icon']} {category}", 
+                        text=category
+                    ))
+                )
+        
+        # เพิ่มตัวเลือกเสริม
+        additional_options = [
+            {'label': '🔥 ขายดี', 'text': 'ขายดี'},
+            {'label': '💰 โปรโมชั่น', 'text': 'โปรโมชั่น'},
+            {'label': '🎯 แนะนำเพิ่ม', 'text': 'แนะนำ'},
+            {'label': '📋 หมวดหมู่', 'text': 'หมวดหมู่'}
+        ]
+        
+        for option in additional_options:
+            if len(quick_reply_items) < 8:  # จำกัดไม่เกิน 8 ปุ่ม
+                quick_reply_items.append(
+                    QuickReplyItem(action=MessageAction(
+                        label=option['label'], 
+                        text=option['text']
+                    ))
+                )
+        
+        return quick_reply_items
     
     def _show_bestsellers(self, event):
         """แสดงสินค้าขายดีพร้อม Quick Reply หมวดหมู่"""
