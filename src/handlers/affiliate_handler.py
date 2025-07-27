@@ -229,6 +229,13 @@ class AffiliateLineHandler:
                 self._browse_category(event, category_name, user_id)
                 return
             
+            # ตรวจสอบว่าเป็นชื่อหมวดหมู่โดยตรงหรือไม่
+            categories = self.db.get_categories()
+            if text in categories:
+                print(f"[DEBUG] User selected category directly: {text}")
+                self._browse_category(event, text, user_id)
+                return
+            
             # ค้นหาสินค้าปกติ
             self._handle_product_search(event, text, user_id)
             
@@ -1229,7 +1236,7 @@ class AffiliateLineHandler:
                 limit=config.MAX_RESULTS_PER_SEARCH,
                 offset=0,
                 category=category_name,
-                order_by='popularity'  # เรียงตามความนิยม
+                order_by='sold_count'  # เรียงตามยอดขาย
             )
             
             products = search_result.get('products', [])
